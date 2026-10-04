@@ -1,134 +1,84 @@
-@using WolfLeash.Extensions
-@inject Api Api
-@inject WolfLeashDbContext Context
-
-<AccordionItem Title="Apps" Name="Apps">
-    <Content>
-        <div class="row">
-            <div class="col">
-                <h4>Profile's Apps</h4>
-                <SortableList TItem="GamesOnWhales.App"
-                              Group="@ProfileId"
-                              Handle=".bb-sortable-list-handle"
-                              Name="empList1"
-                              Data="Apps"
-                              Context="item"
-                              OnUpdate="OnProfileListUpdate"
-                              OnRemove="OnProfileListRemove"
-                              EmptyText="Profile has currently no Apps">
-                    <ItemTemplate>
-                        <div class="d-flex justify-content-start">
-                            <div class="bb-sortable-list-handle pe-2"><Icon Name="IconName.GripVertical" /></div>
-                            <div>@item.Title</div>
-                        </div>
-                    </ItemTemplate>
-                </SortableList>
-            </div>
-            <div class="col">
-                <h4>All Apps</h4>
-                <SortableList TItem="GamesOnWhales.App"
-                              Group="@ProfileId"
-                              Handle=".bb-sortable-list-handle"
-                              Name="empList2"
-                              Data="allApps"
-                              Context="item"
-                              Pull="SortableListPullMode.Clone"
-                              OnUpdate="OnAppListUpdate"
-                              OnRemove="OnAppListRemove"
-                              AllowSorting="false"
-                              EmptyText="No Apps found. Add some.">
-                    <ItemTemplate>
-                        <div class="d-flex justify-content-start">
-                            <div class="bb-sortable-list-handle pe-2"><Icon Name="IconName.GripVertical" /></div>
-                            <div>@item.Title</div>
-                        </div>
-                    </ItemTemplate>
-                </SortableList>
+<h4 class="h5">Enabled apps and mount overrides</h4>
+<p class="text-muted">App order here is the order shown in Wolf-UI. Changes take effect when you save this profile.</p>
+@foreach (var choice in Editor.Apps)
+{
+    var appKey = choice.App.Text("id");
+    <section class="border rounded p-3 mb-3" @key="appKey">
+        <div class="d-flex justify-content-between align-items-center">
+            <label><input type="checkbox" @bind="choice.Enabled" /> <AppIcon Path="@choice.EffectiveIcon" Alt="" /> <strong>@choice.App.Text("title")</strong></label>
+            <div>
+                <button class="btn btn-sm btn-outline-secondary" aria-label="Move app up" disabled="@(Editor.Apps.IndexOf(choice) == 0)" @onclick="() => Move(choice, -1)">↑</button>
+                <button class="btn btn-sm btn-outline-secondary" aria-label="Move app down" disabled="@(Editor.Apps.IndexOf(choice) == Editor.Apps.Count - 1)" @onclick="() => Move(choice, 1)">↓</button>
             </div>
         </div>
-    </Content>
-</AccordionItem>
-
+        @if (choice.Enabled)
+        {
+            <details class="my-2">
+                <summary>@(choice.OverrideIcon ? "Profile icon override" : "App icon")</summary>
+                @if (choice.CatalogApp is not null)
+                {
+                    <label class="d-block my-2"><input type="checkbox" @bind="choice.OverrideIcon" /> Override the default icon for this profile</label>
+                }
+                @if (choice.OverrideIcon || choice.CatalogApp is null)
+                {
+                    <label class="form-label d-block">Icon URL or Wolf path (blank uses placeholder)<input class="form-control" @bind="choice.Icon" @bind:event="oninput" /></label>
+                }
+                else { <p class="text-muted">Uses the default app icon.</p> }
+            </details>
+            @if (choice.CatalogApp is null)
+            {
+                <p class="text-muted mb-1">Profile-only app. Import profile apps into the catalog to establish shared defaults.</p>
+            }
+            @if (choice.PendingDefaults) { <p class="text-primary mb-1">Updated catalog defaults will be applied when this profile is saved.</p> }
+            @if (choice.IsDocker)
+            {
+                var differences = Differences(choice);
+                @if (choice.CatalogApp is not null)
+                {
+                    @if (differences is { Count: 0 }) { <p class="text-success my-2">Uses default mounts</p> }
+                    @if (differences is { Count: > 0 })
+                    {
+                        <table class="table table-sm mt-2">
+                            <thead><tr><th>Container path</th><th>Default mount</th><th>Profile override</th></tr></thead>
+                            <tbody>
+                                @foreach (var difference in differences)
+                                {
+                                    <tr><td class="text-break">@difference.Target</td><td class="text-break"><code>@(difference.Default ?? "None")</code></td><td class="text-break"><code>@(difference.Actual ?? "Removed for this profile")</code></td></tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                }
+                <details class="mt-2">
+                    <summary>Configure profile mounts</summary>
+                    @if (choice.CatalogApp is not null)
+                    {
+                        <p class="mt-2 mb-1">Default mounts:</p>
+                        @foreach (var mount in choice.Defaults) { <div class="text-break"><code>@mount</code></div> }
+                        @if (choice.Defaults.Count == 0) { <p class="text-muted">None</p> }
+                    }
+                    <label class="form-label d-block mt-2">Effective mounts for this profile
+                        <textarea class="form-control font-monospace mt-1" rows="4" @bind="choice.MountsText" @bind:event="oninput"></textarea>
+                    </label>
+                    <p class="text-muted">One source:/container/path[:options] per line. Add, replace, or remove a default mount here.</p>
+                    @if (differences is null) { <p class="text-danger">Check mount syntax and duplicate container paths.</p> }
+                    @if (choice.CatalogApp is not null) { <button class="btn btn-sm btn-outline-secondary" @onclick="choice.ResetMounts">Use default mounts</button> }
+                </details>
+            }
+        }
+    </section>
+}
 @code {
-    [Parameter, EditorRequired] public ProfileAccordionItem Parent { get; set; }
-    [Parameter, EditorRequired] public List<GamesOnWhales.App> Apps { get; set; } = null!;
-    [Parameter, EditorRequired] public string ProfileId { get; set; }
-    public List<GamesOnWhales.App>? allApps = null!;
-
-    protected override Task OnInitializedAsync()
+    [Parameter, EditorRequired] public ProfileEditor Editor { get; set; } = null!;
+    private static List<MountDifference>? Differences(ProfileAppChoice choice)
     {
-        Parent.AppsAccordionShowing = OnShowingAsync;
-        return Task.CompletedTask;
+        try { return MountDefaults.Differences(choice.Defaults, choice.Mounts); }
+        catch (InvalidDataException) { return null; }
     }
-    
-    private async void OnShowingAsync()
+    private void Move(ProfileAppChoice choice, int offset)
     {
-        allApps ??= (await Api.GetProfilesAsync())
-            .SelectMany(p => p.Apps)
-            .Distinct()
-            .UniqueApps(Apps)
-            .ToList() ?? [];
-
-        var query = Context.Apps.Include(a => a.Runner).AsQueryable();
-        
-        foreach (var app in allApps)
-        {
-            query = query.Where(a => 
-                a.Title != app.Title
-                && a.AppId != app.Id);
-        }
-
-        var dbApps = await query.Select(a => a.ToDto()). ToListAsync();
-        
-        allApps.AddRange(dbApps);
-    }
-    
-    private void OnProfileListUpdate(SortableListEventArgs args)
-    {
-        var itemToMove = Apps[args.OldIndex];
-
-        Apps.RemoveAt(args.OldIndex);
-
-        if (args.NewIndex < Apps.Count)
-            Apps.Insert(args.NewIndex, itemToMove);
-        else
-            Apps.Add(itemToMove);
-    }
-
-    private void OnAppListUpdate(SortableListEventArgs args)
-    {
-        if(allApps is null) return;
-        var itemToMove = allApps[args.OldIndex];
-
-        allApps.RemoveAt(args.OldIndex);
-
-        if (args.NewIndex < allApps.Count)
-            allApps.Insert(args.NewIndex, itemToMove);
-        else
-            allApps.Add(itemToMove);
-    }
-
-    private void OnProfileListRemove(SortableListEventArgs args)
-    {
-        Apps.Remove(Apps[args.OldIndex]);
-    }
-
-    private void OnAppListRemove(SortableListEventArgs args)
-    {
-        if(allApps is null) return;
-        // get the item at the old index in list 2
-        var item = allApps[args.OldIndex];
-
-        Apps ??= [];
-        if (args.NewIndex <= Apps.Count - 1)
-        {
-            Apps.Insert(args.NewIndex, item);
-        }
-        else
-        {
-            Apps.Add(item);
-        }
-        // add it to the new index in list 1
-        
+        var index = Editor.Apps.IndexOf(choice); var target = index + offset;
+        if (target < 0 || target >= Editor.Apps.Count) return;
+        Editor.Apps.RemoveAt(index); Editor.Apps.Insert(target, choice);
     }
 }

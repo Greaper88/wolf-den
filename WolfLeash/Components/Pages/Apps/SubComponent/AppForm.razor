@@ -1,367 +1,128 @@
-@implements IDisposable
-@using System.ComponentModel.DataAnnotations
-@using System.Text.RegularExpressions
-@using WolfLeash.Extensions
-@using App = GamesOnWhales.App
-@inject EventLogger Event
-@inject DefaultAppLoader WildLifeApps
+@inject DefaultAppLoader Templates
 
-@if(Directory.Exists("/etc/wolf/covers"))
-{
-    <Offcanvas @ref="_offCanvas"
-               title="Select Cover">
-        <BodyTemplate>
-            @foreach (var file in Directory.GetFiles("/etc/wolf/covers").Where(f => Path.GetExtension(f) == ".png"))
-            {
-                <div class="form-group row mb-3">
-                    <ImageSelector FilePath="@file" @bind-Value="Data!.IconPngPath" @bind-Value:after="OnHideOffCanvasClick"/>
-                </div>
-            }
-        </BodyTemplate>
-    </Offcanvas>
-}
-
-<div style="width: 500px">
-    @if (WildlifeApps.Count > 0)
+<div style="max-width: 850px">
+    @if (AppToEdit is null)
     {
-        <div class="form-group row mb-3">
-            <div style="display:flex; flex-direction: row; justify-content: start; align-items: center">
-                <span style="margin-right: 0.5em">Use Template:</span>
-                <Dropdown Color="DropdownColor.Secondary" Size="DropdownSize.Small">
-                    <DropdownToggleButton>Wildlife App</DropdownToggleButton>
-                    <DropdownMenu>
-                        @foreach (var app in WildlifeApps)
-                        {
-                            var wildlifeApp = app;
-                            <DropdownItem @onclick="@(() => TemplateAppSelected(wildlifeApp))">@app.Title</DropdownItem>
-                        }
-                    </DropdownMenu>
-                </Dropdown>
+        <details class="mb-3">
+            <summary>Start from a Wildlife or TOML template</summary>
+            <div class="d-flex gap-2 my-3">
+                <select class="form-select" aria-label="Wildlife template" @bind="_template">
+                    @foreach (var name in DefaultAppLoader.DefaultApps) { <option>@name</option> }
+                </select>
+                <button class="btn btn-outline-primary" disabled="@_busy" @onclick="LoadTemplate">Load template</button>
             </div>
-        </div>
+            <label class="form-label" for="template-toml">App TOML</label>
+            <textarea id="template-toml" class="form-control font-monospace" rows="6" @bind="_toml" @bind:event="oninput"></textarea>
+            <button class="btn btn-outline-secondary my-2" disabled="@_busy" @onclick="ImportToml">Read TOML</button>
+            @if (_imported.Count > 1)
+            {
+                <p>Select an app from this document:</p>
+                @foreach (var imported in _imported)
+                {
+                    <button class="btn btn-sm btn-outline-secondary me-2" @onclick="() => Load(imported)">@imported.Text("title")</button>
+                }
+            }
+        </details>
     }
-    
-    
-    <EditForm EditContext="editContext" OnValidSubmit="Submit" xmlns="http://www.w3.org/1999/html">
-        <DataAnnotationsValidator/>
-        <div class="form-group row mb-3">
-            <TextInput @bind-Value="Data!.Title" Placeholder="Title"/>
-            <ValidationMessage For="() => Data!.Title"/>
-        </div>
-        <div class="form-group row mb-3">
-            <Tooltip Title="Covers can be links to a png, or png files in /etc/wolf/covers">
-                <div class="form-group row mb-3">
-                    <TextInput @bind-Value="Data!.IconPngPath" Placeholder="Icon"/>
-                </div>
-            </Tooltip>
-            <ValidationMessage For="() => Data!.IconPngPath"/>
-            @if (Directory.Exists("/etc/wolf/covers"))
+    @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+    <form @onsubmit="Save" @onsubmit:preventDefault>
+        <fieldset disabled="@_busy">
+            <label class="form-label" for="app-title">App name</label>
+            <input id="app-title" class="form-control mb-3" required @bind="_title" @bind:event="oninput" />
+            <AppIcon Path="@_icon" Alt="Default app icon" />
+            <label class="form-label d-block" for="app-icon">Default icon URL or Wolf path (blank uses placeholder)</label>
+            <input id="app-icon" class="form-control mb-3" @bind="_icon" @bind:event="oninput" />
+            @if (_definition.Runner().Text("type").Equals("docker", StringComparison.OrdinalIgnoreCase))
             {
-                <Button Color="ButtonColor.Primary" @onclick="OnShowOffCanvasClick">Select Cover</Button>
+                <label class="form-label" for="app-image">Container image</label>
+                <input id="app-image" class="form-control mb-3" required @bind="_image" @bind:event="oninput" />
+                <label class="form-label" for="app-runner">Runner name</label>
+                <input id="app-runner" class="form-control mb-3" required @bind="_runnerName" @bind:event="oninput" />
+                <label class="form-label" for="app-mounts">Default mounts</label>
+                <p class="text-muted">One source:/container/path[:options] per line. Source paths are on the Docker host. Shared libraries belong here.</p>
+                <textarea id="app-mounts" class="form-control font-monospace mb-3" rows="4" @bind="_mounts" @bind:event="oninput"></textarea>
+                <details class="mb-3">
+                    <summary>Advanced runner settings</summary>
+                    <label class="form-label mt-2" for="app-env">Environment variables (one NAME=value per line)</label>
+                    <textarea id="app-env" class="form-control font-monospace mb-3" rows="4" @bind="_env" @bind:event="oninput"></textarea>
+                    <label class="form-label" for="app-devices">Devices (one per line)</label>
+                    <textarea id="app-devices" class="form-control font-monospace mb-3" rows="3" @bind="_devices" @bind:event="oninput"></textarea>
+                    <label class="form-label" for="app-ports">Ports (one per line)</label>
+                    <textarea id="app-ports" class="form-control font-monospace mb-3" rows="3" @bind="_ports" @bind:event="oninput"></textarea>
+                    <label class="form-label" for="app-json">Base create JSON</label>
+                    <textarea id="app-json" class="form-control font-monospace" rows="8" @bind="_baseJson" @bind:event="oninput"></textarea>
+                </details>
             }
-        </div>
-
-        <h5>Runner Configuration:</h5>
-        <div class="form-group row mb-3">
-            <TextInput @bind-Value="Data!.RunnerName" Placeholder="Runner Name"/>
-            <ValidationMessage For="() => Data!.RunnerName"/>
-        </div>
-        <div class="form-group row mb-3">
-            <TextInput @bind-Value="Data!.Image" Placeholder="Image"/>
-            <ValidationMessage For="() => Data!.Image"/>
-        </div>
-
-        <div class="form-group row mb-3">
-            @if (Env is not null && Env.Values.Any(v => v.Contains("RUN_SWAY") || v.Contains("RUN_GAMESCOPE")))
+            else
             {
-                _isSway = Env.Values.Any(e => e.Contains("RUN_SWAY=1") || e.Contains("RUN_SWAY=true"));
-                <Switch Class="mt-3"
-                        Value="!_isSway"
-                        Label="Use GameScope instead of Sway"
-                        ValueExpression="() => _isSway"
-                        ValueChanged="SwitchBetweenSwayAndGameScope"/>
-
+                <label class="form-label" for="app-command">Process command</label>
+                <textarea id="app-command" class="form-control mb-3" rows="3" @bind="_command" @bind:event="oninput"></textarea>
             }
-        </div>
-
-        <div class="form-group row mb-3">
-            <Accordion Flush="true">
-                <AccordionItem Title="Advanced Options">
-                    <Content>
-                        <div class="form-group row mb-3">
-                            <div style="display:flex; flex-direction: row; justify-content: left; align-items: center">
-                                <a>Start Virtual Compositor</a>
-                                <CheckboxInput @bind-Value="Data!.Start_virtual_compositor"/>
-                            </div>
-                        </div>
-                        <div class="form-group row mb-3">
-                            <div style="display:flex; flex-direction: row; justify-content: left; align-items: center">
-                                <a>Start Audio Server</a>
-                                <CheckboxInput @bind-Value="Data!.Start_audio_server"/>
-                            </div>
-                        </div>
-                        <div class="form-group row mb-3">
-                            <div style="display:flex; flex-direction: row; justify-content: left; align-items: center">
-                                <TextInput @bind-Value="Data!.Render_node" Placeholder="Render Node"/>
-                                <ValidationMessage For="() => Data!.Render_node"/>
-                                <RenderDeviceDropdown @bind-Value="@Data!.Render_node"/>
-                            </div>
-                        </div>
-                        <div class="form-group row mb-3">
-                            <TextArrayInput @ref="@Env" Validator="@EnvValidator" DefaultValues="@(["RUN_SWAY=true", "GOW_REQUIRED_DEVICES=/dev/input/* /dev/dri/* /dev/nvidia*"])" Placeholder="Env"/>
-                        </div>
-                        <div class="form-group row mb-3">
-                            <TextArrayInput @ref="@Ports" Validator="@PortsValidator" Placeholder="Ports"/>
-                        </div>
-                        <div class="form-group row mb-3">
-                            <TextArrayInput @ref="@Mounts" Validator="@MountsValidator" Placeholder="Mounts"/>
-                        </div>
-                        <div class="form-group row mb-3">
-                            <TextArrayInput @ref="@Devices" Validator="@DevicesValidator" Placeholder="Devices"/>
-                        </div>
-
-                        <div class="form-group row mb-3">
-                            <h6>Base Create Json:</h6>
-                            <TextAreaInput @bind-Value="Data!.BaseCreateJson" Placeholder="Base Create Json" Rows="8"/>
-                            <ValidationMessage For="() => Data!.BaseCreateJson"/>
-                        </div>
-                    </Content>
-                </AccordionItem>
-            </Accordion>
-        </div>
-
-        <div>
-            <Button Type="ButtonType.Submit" Color="ButtonColor.Primary">Submit</Button>
-        </div>
-    </EditForm>
+            <details class="mb-3">
+                <summary>Streaming settings</summary>
+                <label class="d-block my-2"><input type="checkbox" @bind="_compositor" /> Start virtual compositor</label>
+                <label class="d-block my-2"><input type="checkbox" @bind="_audio" /> Start audio server</label>
+                <label class="form-label" for="app-render">Render node</label>
+                <input id="app-render" class="form-control" @bind="_render" @bind:event="oninput" />
+            </details>
+            <button type="submit" class="btn btn-primary">Save defaults</button>
+            <a class="btn btn-outline-secondary ms-2" href="/apps/show">Back to Apps</a>
+        </fieldset>
+    </form>
 </div>
 
 @code {
-    private bool _isSway = true;
-
-    private List<App> WildlifeApps = [];
-    
-    private Offcanvas? _offCanvas = null!;
-    private async Task OnShowOffCanvasClick()
+    [Parameter] public JsonObject? AppToEdit { get; set; }
+    [Parameter] public EventCallback<JsonObject> OnValidSubmit { get; set; }
+    private JsonObject _definition = new();
+    private string _title = "", _icon = "", _image = "", _runnerName = "", _mounts = "", _env = "", _devices = "", _ports = "", _baseJson = "{}", _command = "", _render = "";
+    private string _template = "steam", _toml = "";
+    private string? _error;
+    private bool _busy, _compositor = true, _audio = true;
+    private List<JsonObject> _imported = [];
+    protected override void OnInitialized() => Load(AppToEdit ?? new JsonObject
     {
-        if(_offCanvas is not null)
-            await _offCanvas.ShowAsync();
+        ["id"] = Guid.NewGuid().ToString("N"), ["support_hdr"] = false,
+        ["h264_gst_pipeline"] = "", ["hevc_gst_pipeline"] = "", ["av1_gst_pipeline"] = "", ["opus_gst_pipeline"] = "",
+        ["runner"] = new JsonObject { ["type"] = "docker", ["env"] = new JsonArray("RUN_SWAY=true", "GOW_REQUIRED_DEVICES=/dev/input/* /dev/dri/* /dev/nvidia*") }
+    });
+    private void Load(JsonObject app)
+    {
+        if (AppToEdit is null && string.IsNullOrWhiteSpace(app.Text("icon_png_path")) && Templates.GetDefaultIcon(app) is { } icon)
+        { app = app.Copy(); app["icon_png_path"] = icon; }
+        _definition = app.Copy();
+        _title = app.Text("title"); _icon = app.Text("icon_png_path");
+        var runner = app.Runner();
+        _image = runner.Text("image"); _runnerName = runner.Text("name"); _command = runner.Text("run_cmd");
+        _mounts = string.Join('\n', runner.Strings("mounts")); _env = string.Join('\n', runner.Strings("env"));
+        _devices = string.Join('\n', runner.Strings("devices")); _ports = string.Join('\n', runner.Strings("ports"));
+        _baseJson = runner.Text("base_create_json", "{}"); _render = app.Text("render_node");
+        _compositor = app["start_virtual_compositor"]?.GetValue<bool>() ?? true;
+        _audio = app["start_audio_server"]?.GetValue<bool>() ?? true;
     }
-
-    private async Task OnHideOffCanvasClick()
+    private async Task Run(Func<Task> action)
     {
-        if(_offCanvas is not null)
-            await _offCanvas.HideAsync();
+        _error = null; _busy = true;
+        try { await action(); } catch (Exception e) { _error = e.Message; } finally { _busy = false; }
     }
-
-    [Parameter]
-    public EventCallback<App> OnValidSubmit { get; set; }
-    
-    [Parameter]
-    public App? AppToEdit { get; set; }
-
-    [SupplyParameterFromForm]
-    public AppFormData? Data { get; set; }
-    private ValidationMessageStore? messageStore;
-    private EditContext? editContext;
-
-    protected override async Task OnInitializedAsync()
+    private Task LoadTemplate() => Run(async () => { _imported = await Templates.GetAppAsync(_template); Load(_imported[0]); });
+    private Task ImportToml() => Run(() => { _imported = DefaultAppLoader.ParseApps(_toml); Load(_imported[0]); return Task.CompletedTask; });
+    private static List<string> Lines(string text) => text.Split('\n', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToList();
+    private Task Save() => Run(async () =>
     {
-        Data ??= new();
-        editContext = new(Data);
-        editContext.OnValidationRequested += HandleValidationRequested;
-        messageStore = new(editContext);
-        WildlifeApps = await WildLifeApps.GetApps();
-    }
-
-    protected override async Task OnAfterRenderAsync(bool firstRender)
-    {
-        if(!firstRender) return;
-        if(AppToEdit is null || Data is null) return;
-        
-        // Map App to FormData
-        Data.Title = AppToEdit.Title;
-        Data.Id = AppToEdit.Id;
-        Data.IconPngPath = AppToEdit.Icon_png_path;
-        Data.RunnerName = AppToEdit.Runner.Name;
-        Data.Image = AppToEdit.Runner.Image;
-        Data.BaseCreateJson = AppToEdit.Runner.Base_create_json;
-        Env.Values = AppToEdit.Runner.Env?.ToList() ?? [];
-        Ports.Values = AppToEdit.Runner.Ports?.ToList() ?? [];
-        Mounts.Values = AppToEdit.Runner.Mounts?.ToList() ?? [];
-        Devices.Values = AppToEdit.Runner.Devices?.ToList() ?? [];
-        
-        StateHasChanged();
-    }
-
-    private void HandleValidationRequested(object? sender,
-        ValidationRequestedEventArgs args)
-    {
-        messageStore?.Clear();
-    }
-
-    #region Env
-    private TextArrayInput Env = null!;
-    private static List<string> EnvValidator(string s)
-    {
-        var errors = new List<string>();
-
-        if(!Regex.IsMatch(s, ".*=.*"))
-            errors.Add("Env should be in the format VARIABLE=VALUE.");
-
-        return errors;
-    }
-    #endregion
-
-    #region Ports
-    private TextArrayInput Ports = null!;
-    private static List<string> PortsValidator(string s)
-    {
-        var errors = new List<string>();
-
-        //TODO: Optimize Regex to include the /udp and /tcp suffix for port declaration and fail on wrong suffixes.
-        if (!Regex.IsMatch(s, "^([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]):([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])"))
-            errors.Add("Port should be formated (0-65535):(0-65535)");
-
-        return errors;
-    }
-    #endregion
-
-    #region Mounts
-    private TextArrayInput Mounts = null!;
-    private static List<string> MountsValidator(string s)
-    {
-        var errors = new List<string>();
-
-        if(!Regex.IsMatch(s, ".*:.*"))
-            errors.Add("Mounts should be in the format A:B.");
-
-        return errors;
-    }
-    #endregion
-
-    #region Devices
-    private TextArrayInput Devices = null!;
-    private static List<string> DevicesValidator(string s)
-    {
-        var errors = new List<string>();
-        //TODO: Add validator for Devices field.
-
-
-        return errors;
-    }
-    #endregion
-
-    private async Task Submit()
-    {
-        var newApp = new App
+        var app = _definition.Copy();
+        app["title"] = _title; app["icon_png_path"] = _icon; app["render_node"] = _render;
+        app["start_virtual_compositor"] = _compositor; app["start_audio_server"] = _audio;
+        var runner = app.Runner();
+        if (runner.Text("type").Equals("docker", StringComparison.OrdinalIgnoreCase))
         {
-            Title = Data!.Title,
-            Id = Data!.Id ?? Guid.NewGuid().ToBase64(),
-            Icon_png_path = Data!.IconPngPath,
-            H264_gst_pipeline = "",
-            Hevc_gst_pipeline = "",
-            Av1_gst_pipeline = "",
-            Opus_gst_pipeline = "",
-            Support_hdr = false,
-            
-            Render_node = Data!.Render_node,
-            Start_virtual_compositor = Data!.Start_virtual_compositor,
-            Start_audio_server = Data!.Start_audio_server,
-            Runner = new()
-            {
-                Name = Data!.RunnerName,
-                Image = Data!.Image,
-                Type = "docker",
-                Env = Env.Values,
-                Ports = Ports.Values,
-                Mounts = Mounts.Values,
-                Devices = Devices.Values,
-                Base_create_json = Data!.BaseCreateJson
-            }
-        };
-        
-        await OnValidSubmit.InvokeAsync(newApp);
-    }
-
-    public void ResetForm()
-    {
-        Event.LogEvent(new ToastMessage(
-            ToastType.Info,
-            "",
-            "Information",
-            $"{DateTime.Now}",
-            $"Added new App."));
-
-        // Reset form
-        Data = new();
-        Env.Values = ["RUN_SWAY=true", "GOW_REQUIRED_DEVICES=/dev/input/* /dev/dri/* /dev/nvidia*"];
-        Ports.Values = [];
-        Mounts.Values = [];
-        Devices.Values = [];
-    }
-
-    public class AppFormData
-    {
-        [Required(ErrorMessage = "Title is Required", AllowEmptyStrings = false)]
-        [MinLength(3, ErrorMessage = "Title should be minimum 3 characters long")]
-        public string Title { get; set; } = null!;
-        public string? Id { get; set; } = null;
-        public string IconPngPath { get; set; } = null!;
-        // ReSharper disable once InconsistentNaming
-        public bool Start_virtual_compositor { get; set; } = true;
-        // ReSharper disable once InconsistentNaming
-        public bool Start_audio_server { get; set; } = true;
-        // ReSharper disable once InconsistentNaming
-        public string Render_node { get; set; } = null!;
-        //
-        // public string H264_gst_pipeline { get; set; }
-        // public string Hevc_gst_pipeline { get; set; }
-        // public string Av1_gst_pipeline { get; set; }
-        // public string Opus_gst_pipeline { get; set; }
-
-        #region Runner Fields
-        public string BaseCreateJson { get; set; } = new Runner().BaseCreateJson;
-        [Required(ErrorMessage = "Image is Required", AllowEmptyStrings = false)]
-        public string Image { get; set; } = null!;
-        [Required(ErrorMessage = "Runner Name is Required", AllowEmptyStrings = false)]
-        public string RunnerName { get; set; } = null!;
-        #endregion
-    }
-
-    public void Dispose()
-    {
-        if (editContext is not null)
-            editContext.OnValidationRequested -= HandleValidationRequested;
-    }
-
-    private void SwitchBetweenSwayAndGameScope()
-    {
-        if (_isSway)
-        {
-            var i = Env.Values.FindIndex(v => v.Contains("RUN_SWAY"));
-            Env.Values[i] = "RUN_GAMESCOPE=true";
+            runner["image"] = _image; runner["name"] = _runnerName; runner["mounts"] = WolfJson.Array(Lines(_mounts));
+            runner["env"] = WolfJson.Array(Lines(_env)); runner["devices"] = WolfJson.Array(Lines(_devices));
+            runner["ports"] = WolfJson.Array(Lines(_ports)); runner["base_create_json"] = _baseJson;
         }
-        else
-        {
-            var i = Env.Values.FindIndex(v => v.Contains("RUN_GAMESCOPE"));
-            Env.Values[i] = "RUN_SWAY=true";
-        }
-    }
-
-    private void TemplateAppSelected(App app)
-    {
-        if(Data is null) return;
-        Data.Title = app.Title;
-        Data.Id = app.Id;
-        Data.IconPngPath = app.Icon_png_path;
-        Data.RunnerName = app.Runner.Name;
-        Data.Image = app.Runner.Image;
-        Data.BaseCreateJson = app.Runner.Base_create_json;
-        Env.Values = app.Runner.Env?.ToList() ?? [];
-        Ports.Values = app.Runner.Ports?.ToList() ?? [];
-        Mounts.Values = app.Runner.Mounts?.ToList() ?? [];
-        Devices.Values = app.Runner.Devices?.ToList() ?? [];
-    }
-
+        else runner["run_cmd"] = _command;
+        AppCatalog.ValidateApp(app);
+        await OnValidSubmit.InvokeAsync(app);
+        _definition = app;
+    });
 }

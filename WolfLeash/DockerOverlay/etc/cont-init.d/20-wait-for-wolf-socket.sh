@@ -12,19 +12,17 @@ elapsed=0
 while [ ! -S "$SOCKET" ]; do
     if [ $elapsed -ge $TIMEOUT ]; then
         echo ""
-        echo "Timeout: Socket did not appear within ${TIMEOUT}s"
-        exit 1
+        echo "Wolf socket did not appear within ${TIMEOUT}s. Starting Den with saved app defaults available."
+        break
     fi
     echo -n "."
     sleep $INTERVAL
     elapsed=$((elapsed + INTERVAL))
 done
 
-echo "Socket file exists, testing connectivity..."
-
 # Test if socket is actually working with netcat
-if timeout 2 nc -U "$SOCKET" -z 2>/dev/null; then
+if [ -S "$SOCKET" ] && timeout 2 nc -U "$SOCKET" -z 2>/dev/null; then
     echo "Socket is available and responsive"
 else
-    echo "Socket exists but may not be ready, is Wolf up and running?"
+    echo "Wolf API is not ready. Profile operations will be available when Wolf starts."
 fi

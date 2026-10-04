@@ -7,7 +7,6 @@ namespace WolfLeash.Components.Classes;
 public class Api : WolfApi, IDisposable
 {
     private readonly ILogger<WolfApi> _logger;
-    private readonly IHostApplicationLifetime _lifeCycleService;
     private readonly ActiveUserManager _activeUserManager;
     private int _connectionErrorCount = 0;
     private DateTime _lastConnectionErrorTime = DateTime.MinValue;
@@ -16,11 +15,9 @@ public class Api : WolfApi, IDisposable
         ILogger<WolfApi> logger, 
         IConfiguration configuration, 
         IEnumerable<ISseEventHandler> handlers, 
-        IHostApplicationLifetime lifetime,
         ActiveUserManager activeUserManager) : 
         base(logger, configuration, handlers)
     {
-        _lifeCycleService = lifetime;
         _activeUserManager = activeUserManager;
         _logger = logger;
         
@@ -40,10 +37,12 @@ public class Api : WolfApi, IDisposable
     private async void ActiveUserManagerOnOnActivityStateChanged(bool hasUser)
     {
         _logger.LogDebug("OnActivityStateChanged {users}", hasUser);
-        if (hasUser)
-            await StartAsync(CancellationToken.None);
-        else
-            await StopAsync(CancellationToken.None);
+        try
+        {
+            if (hasUser) await StartAsync(CancellationToken.None);
+            else await StopAsync(CancellationToken.None);
+        }
+        catch (Exception e) { _logger.LogWarning(e, "Wolf event connection is unavailable."); }
     }
 
     protected override Task OnSseConnectionLostEvent(bool isFatal)
@@ -54,8 +53,7 @@ public class Api : WolfApi, IDisposable
             _lastConnectionErrorTime = DateTime.Now;
         }
         if (++_connectionErrorCount <= 3) return base.OnSseConnectionLostEvent(isFatal);
-        _logger.LogError("Can't connect to Socket, shutting down.");
-        _lifeCycleService.StopApplication();
+        _logger.LogWarning("Wolf API socket is unavailable. Saved app defaults remain available; event connections will retry.");
 
         return base.OnSseConnectionLostEvent(isFatal);
     }

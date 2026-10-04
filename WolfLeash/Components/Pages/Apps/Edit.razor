@@ -1,92 +1,28 @@
-@inject Api Api
-@inject WolfLeashDbContext Context
-@inject NavigationManager NavigationManager
-
 @page "/Apps/Edit"
-
-<h3>Edit App</h3>
-
-@if (_app is not null)
-{
-    <AppForm @ref="_addApp" OnValidSubmit="OnSubmit" AppToEdit="@_app" />
-}
-
+@inject AppCatalog Catalog
+<h3>Edit app defaults</h3>
+<p>Save defaults to the catalog, then apply them to enabled profiles from Apps. Profile mount overrides are preserved.</p>
+@if (_error is not null) { <div class="alert alert-warning" role="alert">@_error</div> }
+@if (_saved) { <div class="alert alert-success" role="status">Defaults saved. <a href="/apps/show">Return to Apps to apply them to enabled profiles.</a></div> }
+@if (_app is not null) { <AppForm AppToEdit="_app.Definition" OnValidSubmit="Save" /> }
 @code {
-    [SupplyParameterFromQuery]
-    [Parameter]
-    public string? AppId { get; set; }
-    private GamesOnWhales.App? _app;
-    private bool _isMoonlightApp = false;
-    
-    AppForm? _addApp;
-
-    private async Task OnSubmit(GamesOnWhales.App modifiedApp)
+    [SupplyParameterFromQuery] public string? AppId { get; set; }
+    private CatalogApp? _app;
+    private bool _saved;
+    private string? _error;
+    protected override async Task OnParametersSetAsync()
     {
-        if (_isMoonlightApp)
-        {
-            await Api.PostAppsDeleteAsync(modifiedApp.Id);
-            await Api.PostAppsAddAsync(modifiedApp);
-            NavigationManager.NavigateTo("/apps/show");
-            return;
-        }
-        
-        var profiles = await Api.GetProfilesAsync();
-        
-        foreach (var profile in profiles.Where(p => p.Apps.Any(a => a.Id == modifiedApp.Id)))
-        {
-            var apps = profile.Apps.Where(a => a.Id != _app!.Id);
-            profile.Apps = apps.Append(modifiedApp).ToList();
-            await Api.UpdateProfile(profile.Id, profile);
-        }
-
-        if (!Context.Apps.Any(a => a.AppId == modifiedApp.Id))
-        {
-            NavigationManager.NavigateTo("/apps/show");
-            return;
-        }
-        
-        var oldApp = _app!.Map(Context);
-        oldApp.Title = modifiedApp.Title;
-        oldApp.AppId = modifiedApp.Id;
-        oldApp.IconPngPath = modifiedApp.Icon_png_path;
-        oldApp.Runner.Image = modifiedApp.Runner.Image;
-        oldApp.Runner.Name = modifiedApp.Runner.Name;
-        oldApp.Runner.Env = modifiedApp.Runner.Env;
-        oldApp.Runner.Ports = modifiedApp.Runner.Ports;
-        oldApp.Runner.Mounts = modifiedApp.Runner.Mounts;
-        oldApp.Runner.Devices = modifiedApp.Runner.Devices;
-        oldApp.Runner.BaseCreateJson = modifiedApp.Runner.Base_create_json;
-        
-        Context.Apps.Update(oldApp);
         try
         {
-            await Context.SaveChangesAsync();
+            _app = (await Catalog.GetAsync()).Apps.SingleOrDefault(a => a.Id == AppId);
+            if (_app is null) _error = "Catalog app not found. Import existing profile apps from Apps first.";
         }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-            throw;
-        }
-        NavigationManager.NavigateTo("/apps/show");
+        catch (Exception e) { _error = e.Message; }
     }
-
-    protected override async Task OnInitializedAsync()
+    private async Task Save(JsonObject app)
     {
-        var profiles = await Api.GetProfilesAsync();
-        _app = profiles
-            .SelectMany(p => p.Apps)
-            .FirstOrDefault(a => a.Id == AppId);
-        
-        if(_app is not null) return;
-
-        _app = Context.Apps
-            .Include(a => a.Runner)
-            .FirstOrDefault(a => a.AppId == AppId)?
-            .ToDto();
-        
-        if(_app is not null) return;
-
-        _app = (await Api.GetAppsAsync()).FirstOrDefault(a => a.Id == AppId);
-        _isMoonlightApp = true;
+        await Catalog.SaveAsync(new CatalogApp { Id = _app!.Id, Definition = app }, _app.Definition);
+        _app.Definition = app.Copy();
+        _saved = true;
     }
 }

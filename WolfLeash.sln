@@ -1,6 +1,6 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WolfLeash", "WolfLeash/WolfLeash.csproj", "{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WolfLeash", "WolfLeash\WolfLeash.csproj", "{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}"
 EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{A8A0A546-CFEE-4B32-97BE-0C4C8B5A9703}"
 	ProjectSection(SolutionItems) = preProject
@@ -9,15 +9,44 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		.github\workflows\docker-build.yml = .github\workflows\docker-build.yml
 	EndProjectSection
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WolfLeash.Tests", "WolfLeash.Tests\WolfLeash.Tests.csproj", "{094E6312-CB6A-452C-84BE-8EA3EB029083}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Debug|x64.Build.0 = Debug|Any CPU
+		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Debug|x86.Build.0 = Debug|Any CPU
 		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Release|Any CPU.Build.0 = Release|Any CPU
+		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Release|x64.ActiveCfg = Release|Any CPU
+		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Release|x64.Build.0 = Release|Any CPU
+		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Release|x86.ActiveCfg = Release|Any CPU
+		{64FD77F9-B48E-4659-B9CE-C9527BCEBB57}.Release|x86.Build.0 = Release|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Debug|x64.Build.0 = Debug|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Debug|x86.Build.0 = Debug|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Release|Any CPU.Build.0 = Release|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Release|x64.ActiveCfg = Release|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Release|x64.Build.0 = Release|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Release|x86.ActiveCfg = Release|Any CPU
+		{094E6312-CB6A-452C-84BE-8EA3EB029083}.Release|x86.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
 	EndGlobalSection
 EndGlobal

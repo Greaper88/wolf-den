@@ -3,6 +3,8 @@
 set -e
 
 export APP_UID=1000
+WOLF_SOCKET_PATH=${WOLF_SOCKET_PATH:-/var/run/wolf/wolf.sock}
+export WOLF_SOCKET_PATH=${WOLF_SOCKET_PATH#unix://}
 
 exit_script() {
     trap - SIGTERM SIGINT SIGQUIT SIGHUP ERR EXIT
@@ -24,8 +26,7 @@ if [ "$(id -u)" = "0" ]; then
     done
 fi
 
-WOLF_SOCKET_PATH=${WOLF_SOCKET_PATH:-/var/run/wolf/wolf.sock}
-socat UNIX-LISTEN:/app/wolf.sock,mode=600,user=${APP_UID},group=${APP_UID},reuseaddr,fork UNIX-CONNECT:"${WOLF_SOCKET_PATH}" 2> /dev/null &
+socat UNIX-LISTEN:/app/wolf.sock,mode=600,user=${APP_UID},group=${APP_UID},unlink-early,fork UNIX-CONNECT:"${WOLF_SOCKET_PATH}" 2> /dev/null &
 export "WOLF_SOCKET_PATH=unix:///app/wolf.sock"
 
 export "DOTNET_EnableDiagnostics=0"

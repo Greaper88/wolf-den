@@ -1,172 +1,33 @@
-@implements IDisposable
-@using System.ComponentModel.DataAnnotations
-@using WolfLeash.Extensions
-@inject ILogger<AddProfile> Logger
-@inject Api Api
-@inject EventLogger Event
-@inject DefaultAppLoader WildLifeApps
-
-@if(Directory.Exists("/etc/wolf/covers"))
-{
-    <Offcanvas @ref="_offCanvas"
-               title="Select Cover">
-        <BodyTemplate>
-            @foreach (var file in Directory.GetFiles("/etc/wolf/covers").Where(f => Path.GetExtension(f) == ".png"))
-            {
-                <div class="form-group row mb-3">
-                    <ImageSelector FilePath="@file" @bind-Value="Data!.IconPngPath" @bind-Value:after="OnHideOffCanvasClick"/>
-                </div>
-            }
-        </BodyTemplate>
-    </Offcanvas>
-}
-
-<div style="width: 500px">
-<EditForm EditContext="_editContext" OnValidSubmit="Submit">
-    <DataAnnotationsValidator />
-    <div class="form-group row mb-3">
-        <div style="display:flex; flex-direction: row; justify-content: left; align-items: center">
-            <TextInput @bind-Value="Data!.Name" Placeholder="Name"/>
-            <ValidationMessage For="() => Data!.Name"/>
-        </div>
-    </div>
-    <div class="form-group row mb-3">
-        <Tooltip Title="Icons can be links to a png, or png files in /etc/wolf/covers">
-            <div class="form-group row mb-3">
-                <div style="display:flex; flex-direction: row; justify-content: left; align-items: center">
-                    <TextInput @bind-Value="Data!.IconPngPath" Placeholder="Icon"/>
-                </div>
-            </div>
-        </Tooltip>
-        <ValidationMessage For="() => Data!.IconPngPath"/>
-        @if(Directory.Exists("/etc/wolf/covers"))
-        {
-            <div style="display:flex; flex-direction: row; justify-content: left; align-items: center">
-                <Button Color="ButtonColor.Primary" @onclick="OnShowOffCanvasClick">Select Cover</Button>
-            </div>
-        }
-    </div>
-
-    <div class="form-group row mb-3">
-        <div style="display:flex; flex-direction: row; justify-content: left; align-items: center">
-            <a>Include Default Apps:</a>
-            <InputCheckbox @bind-Value="_addDefaultApps"/>
-        </div>
-    </div>
-    
-    <div class="form-group row mb-3">
-        <div style="display:flex; flex-direction: row; justify-content: left; align-items: center">
-            <a>Enable Pin:</a>
-            <InputCheckbox @bind-Value="_showPinInput"/>
-        </div>
-    </div>
-    @if (_showPinInput)
-    {
-        <div class="form-group row mb-3">
-            <TextInput @bind-Value="Data!.PinString" Placeholder="Pin"/>
-            <ValidationMessage For="() => Data!.PinString"/>
-        </div>
-    }
-
-    <div>
-        <Button Type="ButtonType.Submit" Color="ButtonColor.Primary" Disabled="@_submitDisabled" @ref="_submitButton">Submit</Button>
-    </div>
-</EditForm>
-</div>
-
+@inject WolfConfigurationClient Wolf
+@inject NavigationManager Navigation
+<p>Create a profile, then enable its apps from the catalog under Profiles.</p>
+@if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
+<form style="max-width: 650px" @onsubmit="Save" @onsubmit:preventDefault>
+    <fieldset disabled="@_busy">
+        <label class="form-label d-block">Profile name<input class="form-control" required @bind="_name" @bind:event="oninput" /></label>
+        <label class="form-label d-block">Icon URL or Wolf path<input class="form-control" @bind="_icon" @bind:event="oninput" /></label>
+        <label class="form-label d-block"><input type="checkbox" @bind="_hasPin" /> Require PIN</label>
+        @if (_hasPin) { <label class="form-label d-block">PIN<input class="form-control" type="password" inputmode="numeric" autocomplete="new-password" @bind="_pin" @bind:event="oninput" /></label> }
+        <button type="submit" class="btn btn-primary">Create profile</button>
+    </fieldset>
+</form>
 @code {
-    private bool _submitDisabled = false;
-    private Button? _submitButton = null!;
-    private Offcanvas? _offCanvas = null!;
-    private async Task OnShowOffCanvasClick()
+    [Parameter] public EventCallback OnValidSubmit { get; set; }
+    private string _name = "", _icon = "", _pin = "";
+    private bool _hasPin, _busy;
+    private string? _error;
+    private async Task Save()
     {
-        if(_offCanvas is not null) 
-            await _offCanvas.ShowAsync();
-    }
-
-
-    private async Task OnHideOffCanvasClick()
-    {
-        if(_offCanvas is not null) 
-            await _offCanvas.HideAsync();
-    }
-    
-    [Parameter]
-    public EventCallback OnValidSubmit { get; set; }
-
-    [SupplyParameterFromForm]
-    public ProfileFormData? Data { get; set; }
-    private ValidationMessageStore? _messageStore;
-    private EditContext? _editContext;
-
-    private bool _showPinInput = false;
-    private bool _addDefaultApps = false;
-
-    protected override void OnInitialized()
-    {
-        Data ??= new();
-        _editContext = new(Data);
-        _editContext.OnValidationRequested += HandleValidationRequested;
-        _messageStore = new(_editContext);
-    }
-
-    private void HandleValidationRequested(object? sender,
-        ValidationRequestedEventArgs args)
-    {
-        _messageStore?.Clear();
-
-        //messageStore?.Add(() => Data!.Name, "Stupid Name.");
-    }
-
-    private async Task Submit()
-    {
-        if (_submitButton is not null)
+        _busy = true; _error = null;
+        try
         {
-            _submitDisabled = true;
-            _submitButton.ShowLoading("Sending");
+            var editor = new ProfileEditor(new JsonObject { ["id"] = Guid.NewGuid().ToString("N"), ["apps"] = new JsonArray() }, new CatalogState())
+            { Name = _name, Icon = _icon, Pin = _pin, HasPin = _hasPin };
+            await Wolf.AddProfileAsync(editor.Build().Profile);
+            await OnValidSubmit.InvokeAsync();
+            Navigation.NavigateTo("/profiles/show");
         }
-        
-        var newProfile = new Profile
-        {
-            Name = Data!.Name,
-            Id = Guid.NewGuid().ToBase64(),
-            Icon_png_path = Data!.IconPngPath,
-            Pin = _showPinInput ? Data!.Pin : null,
-            Apps = _addDefaultApps ? await WildLifeApps.GetApps() : Array.Empty<GamesOnWhales.App>()
-        };
-
-        await Api.AddProfile(newProfile);
-
-        Event.LogEvent(new ToastMessage(ToastType.Info, "", "Information", $"{DateTime.Now}", $"Added new profile: {newProfile.Name}."));
-
-        // Reset form
-        Data = new();
-
-        await OnValidSubmit.InvokeAsync();
-    }
-
-    public void Dispose()
-    {
-        if (_editContext is not null)
-        {
-            _editContext.OnValidationRequested -= HandleValidationRequested;
-        }
-    }
-
-    public class ProfileFormData
-    {
-        [Required(ErrorMessage = "Name is Required", AllowEmptyStrings = false)]
-        [MinLength(3, ErrorMessage = "Name should be minimum 3 characters long")]
-        public string Name { get; set; } = null!;
-
-        public string Id { get; set; } = null!;
-
-        public string IconPngPath { get; set; } = "";
-
-        [MinLength(4, ErrorMessage = "Pin should be minimum 4 numbers long")]
-        [RegularExpression("[0-9]*", ErrorMessage = "Pin can only contain numbers")]
-        public string? PinString { get; set; } = null!;
-
-        public ICollection<int>? Pin => PinString?.Select(c => int.Parse(c.ToString())).ToList();
+        catch (Exception e) { _error = e.Message; }
+        finally { _busy = false; }
     }
 }

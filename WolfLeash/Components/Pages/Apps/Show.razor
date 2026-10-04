@@ -1,107 +1,88 @@
 @page "/Apps/Show"
-@implements IDisposable
-@inject Api Api
-@inject WolfLeashDbContext Context
+@inject AppCatalog Catalog
+@inject WolfConfigurationClient Wolf
 
-<div style="display:flex; flex-direction: row; justify-content: space-between; align-items: center">
+<div class="d-flex justify-content-between align-items-center mb-3">
     <h3>Apps</h3>
-    <Button Type="ButtonType.Link" Color="ButtonColor.Primary" To="/apps/add" >Add</Button>
+    <a class="btn btn-primary" href="/apps/add">Add app</a>
 </div>
-
-@if (Apps is null)
+<p>Configure the apps available on this system and their default mounts. Enable apps and customize mounts under Profiles.</p>
+<div class="d-flex flex-wrap gap-2 mb-3">
+    <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="RefreshGow">Add new apps from GOW</button>
+    <button class="btn btn-outline-secondary" disabled="@_busy" @onclick="Import">Import existing profile apps</button>
+    <button class="btn btn-outline-primary" disabled="@_busy" @onclick="Apply">Apply defaults to enabled profiles</button>
+</div>
+@if (_error is not null) { <div class="alert alert-warning" role="alert">@_error</div> }
+@if (Catalog.SourceStatus is not null) { <div class="alert alert-warning" role="alert">@Catalog.SourceStatus</div> }
+@if (_message is not null) { <div class="alert alert-success" role="status">@_message</div> }
+@if (_state is null) { <p>Loading catalog…</p> }
+else if (_state.Apps.Count == 0)
 {
-    <Spinner />
+    <p>No catalog apps yet. Add an app or import your existing profile apps. The catalog is saved in Wolf Den's persistent storage.</p>
 }
 else
 {
-    @foreach (var group in Apps.Chunk(ColumnSize))
-    {
-        <AppCardGroup Apps="@group" GroupSize="ColumnSize" />
-    }
+    <div class="row row-cols-1 row-cols-lg-2 g-3">
+        @foreach (var app in _state.Apps)
+        {
+            <div class="col" @key="app.Id">
+                <section class="card h-100">
+                    <div class="card-body">
+                        <AppIcon Path='@app.Definition.Text("icon_png_path")' Alt="@app.Title" Style="width:100%;height:140px;object-fit:contain" />
+                        <h4 class="h5">@app.Title</h4>
+                        <p class="text-break text-muted">@app.Definition.Runner().Text("image", app.Definition.Runner().Text("run_cmd"))</p>
+                        <strong>Default mounts</strong>
+                        @if (app.Definition.Runner().Strings("mounts").Count == 0) { <p class="text-muted">None</p> }
+                        @foreach (var mount in app.Definition.Runner().Strings("mounts")) { <div class="text-break"><code>@mount</code></div> }
+                    </div>
+                    <div class="card-footer d-flex flex-wrap gap-2">
+                        <a class="btn btn-sm btn-primary" href="/apps/edit?AppId=@app.Id">Edit defaults</a>
+                        @if (_deleteId == app.Id)
+                        {
+                            <span>Remove from catalog? Enabled profile apps will stay.</span>
+                            <button class="btn btn-sm btn-danger" disabled="@_busy" @onclick="() => Delete(app.Id)">Remove</button>
+                            <button class="btn btn-sm btn-secondary" @onclick="() => _deleteId = null">Cancel</button>
+                        }
+                        else { <button class="btn btn-sm btn-outline-danger" @onclick="() => _deleteId = app.Id">Remove from catalog</button> }
+                    </div>
+                </section>
+            </div>
+        }
+    </div>
 }
-
-@if (MainScreenApps is not null)
-{
-    <br>
-    <h3>Moonlight Apps</h3>
-    <CardGroup>
-    @foreach (var app in MainScreenApps)
-    {
-        <MoonlightAppCard App="@app" />
-    }
-    @foreach (var _ in Enumerable.Range(0, ColumnSize - MainScreenApps.Count))
-    {
-        <MoonlightAppCard />
-    }
-    </CardGroup>
-}
-
 
 @code {
-    [Parameter, EditorRequired] public int ColumnSize { get; set; } = 7;
-    private List<GamesOnWhales.App>? Apps { get; set; } = null;
-    //private ConfirmDialog dialog = default!;
-    private ICollection<GamesOnWhales.App>? MainScreenApps { get; set; } = null;
-    
-    protected override async Task OnInitializedAsync()
+    private CatalogState? _state;
+    private bool _busy;
+    private string? _error, _message, _deleteId;
+    protected override async Task OnInitializedAsync() => await Run(async () => _state = await Catalog.GetAsync());
+    private async Task Run(Func<Task> action)
     {
-        // TODO: Re-enable Moonlight Apps after Process runner work in the API client.
-        //MainScreenApps ??= await Api.GetAppsAsync();
-        
-        await OnProfilesUpdated(this, (await Api.GetProfilesAsync()).ToList());
-        Api.ProfilesUpdated += OnProfilesUpdated;
+        _busy = true; _error = null; _message = null;
+        try { await action(); }
+        catch (Exception e) { _error = e.Message; }
+        finally { _busy = false; }
     }
-
-    private async Task OnProfilesUpdated(object caller, ICollection<Profile> profiles)
+    private Task Import() => Run(async () =>
     {
-        Apps?.Clear();
-
-        var apps = new List<GamesOnWhales.App>();
-
-        foreach (var app in profiles.SelectMany(p => p.Apps))
-        {
-            if(app is null) continue;
-            if(apps.Any(a => a.Id == app.Id)) continue;
-            if(apps.Any(a => 
-                   a.Title == app.Title &&
-                   a.Icon_png_path == app.Icon_png_path &&
-                   a.Runner.Base_create_json == app.Runner.Base_create_json &&
-                   a.Runner.Name == app.Runner.Name &&
-                   a.Runner.Image == app.Runner.Image &&
-                   a.Runner.Type == app.Runner.Type &&
-                   a.Runner.Devices.SequenceEqual(app.Runner.Devices) &&
-                   a.Runner.Mounts.SequenceEqual(app.Runner.Mounts) &&
-                   a.Runner.Env.SequenceEqual(app.Runner.Env) &&
-                   a.Runner.Ports.SequenceEqual(app.Runner.Ports)))
-                continue;
-            
-            apps.Add(app);
-        }
-        
-        Apps = apps;
-        
-        var query = Context.Apps.Include(a => a.Runner).AsQueryable();
-        foreach (var app in Apps)
-        {
-            query = query.Where(a => a.AppId == app.Id);
-        }
-        Context.Apps.RemoveRange(query);
-        await Context.SaveChangesAsync();
-        
-        var dbApps = Context
-            .Apps
-            .Include(a => a.Runner)
-            .ToList()
-            .Select(a => a.ToDto());
-
-        Apps.AddRange(dbApps);
-
-        await InvokeAsync(StateHasChanged);
-    }
-
-    public void Dispose()
+        await Catalog.ImportProfilesAsync(await Wolf.GetProfilesAsync());
+        _state = await Catalog.GetAsync();
+        _message = "Existing apps imported. Profile settings and mounts were preserved.";
+    });
+    private Task RefreshGow() => Run(async () =>
     {
-        Api.ProfilesUpdated -= OnProfilesUpdated;
-    }
-    
+        var count = await Catalog.RefreshGowAsync();
+        _state = await Catalog.GetAsync();
+        _message = $"Added {count} GOW app(s). Existing defaults were preserved.";
+    });
+    private Task Apply() => Run(async () =>
+    {
+        var count = await Catalog.ApplyDefaultsAsync();
+        _state = await Catalog.GetAsync();
+        _message = $"Defaults applied to {count} profile(s). Profile overrides were preserved.";
+    });
+    private Task Delete(string id) => Run(async () =>
+    {
+        await Catalog.DeleteAsync(id); _deleteId = null; _state = await Catalog.GetAsync();
+    });
 }

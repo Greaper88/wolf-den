@@ -1,27 +1,13 @@
-@inject WolfLeashDbContext Context
 @page "/Apps/Add"
-
-<h3>New App</h3>
-<AppForm @ref="_addApp" OnValidSubmit="OnSubmit" />
-
-@code
-{
-    AppForm? _addApp;
-    
-    private async Task OnSubmit(GamesOnWhales.App app)
+@inject AppCatalog Catalog
+@inject NavigationManager Navigation
+<h3>Add catalog app</h3>
+<p>Default mounts apply when this app is enabled for a profile.</p>
+<AppForm OnValidSubmit="Save" />
+@code {
+    private async Task Save(JsonObject app)
     {
-        Context.Apps.Add(app);
-
-        try
-        {
-            await Context.SaveChangesAsync();
-        }
-        catch (Exception e)
-        {
-            Console.WriteLine(e);
-        }
-        
-        Console.WriteLine(_addApp is null);
-        _addApp?.ResetForm();
+        await Catalog.SaveAsync(new CatalogApp { Definition = app });
+        Navigation.NavigateTo("/apps/show");
     }
 }

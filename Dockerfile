@@ -18,6 +18,7 @@ ARG BUILD_CONFIGURATION=Release
 RUN dotnet publish "./WolfLeash.csproj" -c $BUILD_CONFIGURATION -o /app/publish /p:UseAppHost=false
 
 FROM base AS final
+ENV WOLF_DataPath=/app/wolf-den
 
 USER root
 

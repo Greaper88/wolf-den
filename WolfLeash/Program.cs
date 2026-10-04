@@ -6,12 +6,14 @@ using GamesOnWhales.Extensions;
 using GamesOnWhales.SSE;
 using Microsoft.AspNetCore.Components.Server.Circuits;
 using WolfLeash.Components.Classes.DecompressionStrategy;
-using WolfLeash.Patches;
 using App = WolfLeash.Components.App;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Configuration.AddEnvironmentVariables("WOLF_");
+// Accept both documented filesystem paths and the unix:// URI used by the image.
+var wolfSocketPath = builder.Configuration["SOCKET_PATH"] ?? "/var/run/wolf/wolf.sock";
+if (wolfSocketPath.StartsWith('/')) builder.Configuration["SOCKET_PATH"] = "unix://" + wolfSocketPath;
 
 builder.WebHost.UseStaticWebAssets();
 
@@ -42,9 +44,10 @@ builder.Services.AddTransient<ISseEventHandler, PairSignalEventHandler>();
 builder.Services.AddWolfApi<Api>();
 
 builder.Services.AddSingleton<DefaultAppLoader>();
-
-var migrationPatcher = new DatabasePreMigrationPatches();
-migrationPatcher.Execute();
+builder.Services.AddSingleton<WolfLeash.Configuration.DenStorage>();
+builder.Services.AddSingleton<WolfLeash.Configuration.WolfConfigurationClient>();
+builder.Services.AddSingleton<WolfLeash.Configuration.AppCatalog>();
+builder.Services.AddHostedService<WolfLeash.Configuration.CatalogInitializer>();
 
 builder.Services.AddDbContext<WolfLeashDbContext>();
 
@@ -89,6 +92,11 @@ app.UseStaticFiles();
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+app.MapGet("/api/icons", async (string path, WolfLeash.Configuration.WolfConfigurationClient wolf) =>
+{
+    try { return Results.File(await wolf.GetIconAsync(path), "image/png"); }
+    catch { return Results.Redirect("/default-icon.png"); }
+});
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 

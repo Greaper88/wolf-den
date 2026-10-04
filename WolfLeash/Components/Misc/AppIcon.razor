@@ -1,0 +1,12 @@
+<img src="@Source" alt="@Alt" class="@Class" style="@Style"
+     onerror="this.onerror=null;this.src='/default-icon.png';" />
+
+@code {
+    [Parameter] public string? Path { get; set; }
+    [Parameter] public string Alt { get; set; } = "App icon";
+    [Parameter] public string? Class { get; set; }
+    [Parameter] public string Style { get; set; } = "width:64px;height:64px;object-fit:contain";
+    private string Source => string.IsNullOrWhiteSpace(Path) ? "/default-icon.png"
+        : Uri.TryCreate(Path, UriKind.Absolute, out var uri) && uri.Scheme is "https" or "http" ? Path
+        : Path.StartsWith('/') ? $"/api/icons?path={Uri.EscapeDataString(Path)}" : "/default-icon.png";
+}
