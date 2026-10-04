@@ -144,6 +144,33 @@ public sealed class CatalogSourceTests
         Assert.Single(state.Apps);
         Assert.Equal("https://example.test/user.png", state.Links.Single(l => l.ProfileId == "two").IconOverride);
     }
+
+    [Fact]
+    public async Task OlderRunnerSettingsLinkToGowDefaultsWithoutChangingProfileLaunchSettings()
+    {
+        await using var test = await TestContext.Create();
+        var standard = ConfigurationTests.App("catalog"); standard["title"] = "Prism Launcher";
+        await test.Catalog.SaveAsync(new CatalogApp { Definition = standard });
+        var old = standard.Copy(); old["id"] = "existing"; old["title"] = "Prismlauncher";
+        old.Runner()["env"] = new JsonArray("USER=legacy");
+        old.Runner()["name"] = "OldPrismRunner";
+        old.Runner()["base_create_json"] = "{\"HostConfig\":{\"CapAdd\":[\"SYS_ADMIN\"]}}";
+        test.Handler.Profiles = [ConfigurationTests.Profile("player", old)];
+        await test.Catalog.ImportProfilesAsync(test.Handler.Profiles);
+        var state = await test.Catalog.GetAsync();
+        Assert.Single(state.Apps);
+        var updated = new ProfileEditor(test.Handler.Profiles[0], state).Build().Profile.Objects("apps")[0];
+        Assert.True(JsonNode.DeepEquals(old, updated));
+        var entry = state.Apps.Single(); var previous = entry.Definition.Copy();
+        entry.Definition.Runner()["mounts"] = new JsonArray("/shared:/games");
+        await test.Catalog.SaveAsync(entry, previous);
+        await test.Catalog.ApplyDefaultsAsync();
+        var result = test.Handler.Profiles[0].Objects("apps")[0];
+        Assert.Equal(old.Runner().Text("base_create_json"), result.Runner().Text("base_create_json"));
+        Assert.Equal(old.Runner().Strings("env"), result.Runner().Strings("env"));
+        Assert.Equal("OldPrismRunner", result.Runner().Text("name"));
+        Assert.Equal(new[] { "/shared:/games" }, result.Runner().Strings("mounts"));
+    }
 }
 
 internal sealed class FakeGow : HttpMessageHandler

@@ -157,9 +157,11 @@ existing Wolf profiles without publishing them to GOW first.
 
 On an existing installation, **Import existing profile apps** links the current
 Wolf-UI apps to catalog defaults while preserving their IDs, mounts, icons, and
-other settings. Apps with the same launch configuration share a catalog entry;
-mounts, icons, and resolved streaming fields can differ per profile. Distinct
-runner configurations remain separate entries. Old saved SQLite apps are imported
+other settings. Apps with the same name and container image share a catalog entry;
+existing differences in mounts, icons, runner settings, and streaming fields stay
+with their profiles. Names ignore case and whitespace when matching old templates.
+Different images or named apps remain separate; ambiguous saved variants require
+an exact configuration match. Old saved SQLite apps are imported
 once into the new catalog without removing their database records.
 
 **Profiles** shows all enabled apps, available catalog apps, and the differences

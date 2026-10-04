@@ -106,7 +106,7 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
         foreach (var template in result.Apps)
         {
             if (state.Apps.Any(a => a.Source == template.Source) || state.RemovedSources.Contains(template.Source)) continue;
-            var existing = state.Apps.FirstOrDefault(a => SameTemplate(a.Definition, template.App));
+            var existing = FindEntry(state, template.App);
             if (existing is not null) existing.Source = template.Source;
             else { state.Apps.Add(new CatalogApp { Source = template.Source, Definition = template.App }); added++; }
         }
@@ -148,8 +148,8 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
         finally { _gate.Release(); }
     }
 
-    // Explicit import links existing Wolf-UI apps. Identity ignores profile presentation
-    // and resolved streaming fields; distinct runner configurations remain separate.
+    // Link the same named app/image to shared defaults. Existing launch differences
+    // remain in the profile and are preserved by the three-way default merge.
     public async Task ImportProfilesAsync(IReadOnlyList<JsonObject> profiles)
     {
         await _gate.WaitAsync();
@@ -160,7 +160,7 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
             foreach (var app in profile.Objects("apps"))
             {
                 if (state.Links.Any(l => l.ProfileId == profile.Text("id") && l.AppId == app.Text("id"))) continue;
-                var entry = state.Apps.FirstOrDefault(a => SameTemplate(a.Definition, app));
+                var entry = FindEntry(state, app);
                 if (entry is null)
                 {
                     entry = new CatalogApp { Definition = app.Copy() };
@@ -181,6 +181,26 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
             await storage.WriteAsync(FileName, state);
         }
         finally { _gate.Release(); }
+    }
+
+    private static CatalogApp? FindEntry(CatalogState state, JsonObject app)
+    {
+        var exact = state.Apps.FirstOrDefault(a => SameTemplate(a.Definition, app));
+        if (exact is not null) return exact;
+        var candidates = state.Apps.Where(a => SameApplication(a.Definition, app)).Take(2).ToList();
+        // Several intentionally saved variants require an exact match.
+        return candidates.Count == 1 ? candidates[0] : null;
+    }
+
+    private static bool SameApplication(JsonObject first, JsonObject second)
+    {
+        static string Name(JsonObject app) => string.Concat(app.Text("title").Where(c => !char.IsWhiteSpace(c))).ToLowerInvariant();
+        if (Name(first) != Name(second)) return false;
+        var a = first.Runner(); var b = second.Runner();
+        if (!a.Text("type").Equals(b.Text("type"), StringComparison.OrdinalIgnoreCase)) return false;
+        return a.Text("type").Equals("docker", StringComparison.OrdinalIgnoreCase)
+            ? a.Text("image") == b.Text("image")
+            : a.Text("run_cmd") == b.Text("run_cmd");
     }
 
     public static bool SameTemplate(JsonObject first, JsonObject second)
