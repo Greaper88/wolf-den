@@ -2,6 +2,11 @@
 
 A web UI for managing Wolf
 
+This fork's custom app catalog and profile management live on the default `main`
+branch. `stable` retains the upstream baseline. The published fork image is
+`ghcr.io/greaper88/wolf-den:main`; commits to `main` build that tag and a commit tag
+through GitHub Actions.
+
 ## Quickstart
 
 > [!IMPORTANT]
@@ -26,7 +31,7 @@ docker run --name wolf-den \
   -e WOLF_SOCKET_PATH=/var/run/wolf/wolf.sock \
   -v /var/run/wolf:/var/run/wolf \
   -v /etc/wolf/wolf-den:/app/wolf-den/ \
-  ghcr.io/games-on-whales/wolf-den:stable
+  ghcr.io/greaper88/wolf-den:main
 ```
 
 ### Example compose
@@ -59,7 +64,7 @@ services:
     restart: unless-stopped
 
   wolf-den:
-    image: ghcr.io/games-on-whales/wolf-den:stable
+    image: ghcr.io/greaper88/wolf-den:main
     ports:
       - 8080:8080
     environment:

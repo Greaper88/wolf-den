@@ -2,6 +2,13 @@ name: Docker build
 
 on:
   push:
+    branches: [main]
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
   buildx:
@@ -22,11 +29,11 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}
             type=ref,event=branch
-            type=raw,value=alpha
             type=sha
           flavor: latest=false # let's not produce a :latest tag
 
       - name: Set up Docker Buildx
+        id: buildx
         uses: docker/setup-buildx-action@v3
 
       - name: Login to GitHub Container Registry
@@ -35,7 +42,7 @@ jobs:
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Wolf Den
         uses: docker/build-push-action@v6
