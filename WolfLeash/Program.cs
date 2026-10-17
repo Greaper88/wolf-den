@@ -38,6 +38,7 @@ builder.Services.AddLogging(configure =>
 builder.Services.AddTransient<ColorGenerator>();
 
 builder.Services.AddSingleton<ActiveUserManager>();
+builder.Services.AddScoped<WolfLeash.Dashboard.DashboardConnection>();
 builder.Services.AddScoped<CircuitHandler, BlazorConnectionTracker>();
 
 builder.Services.AddTransient<ISseEventHandler, PairSignalEventHandler>();
@@ -47,6 +48,7 @@ builder.Services.AddSingleton<DefaultAppLoader>();
 builder.Services.AddSingleton<WolfLeash.Configuration.DenStorage>();
 builder.Services.AddSingleton<WolfLeash.Configuration.WolfConfigurationClient>();
 builder.Services.AddSingleton<WolfLeash.Configuration.AppCatalog>();
+builder.Services.AddSingleton(sp => new WolfLeash.Dashboard.DashboardService(sp.GetRequiredService<IConfiguration>()));
 builder.Services.AddHostedService<WolfLeash.Configuration.CatalogInitializer>();
 
 builder.Services.AddDbContext<WolfLeashDbContext>();

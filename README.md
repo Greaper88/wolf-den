@@ -231,3 +231,21 @@ persistent customizations, mount and icon inheritance, profile field preservatio
 conflicting edits, failed saves, and populated legacy SQLite migrations. Browser
 checks should use a disposable Wolf API and a separate `WOLF_DataPath` rather
 than changing live profiles.
+
+### Home dashboard
+
+Home shows Wolf's GPUs, device-wide core/VRAM/encoder utilization, cached verified codecs,
+connected clients and their negotiated codec, target bitrate, resolution and frame rate.
+Running Wolf app containers are grouped by profile, including apps retained after a client disconnects.
+Each container shows its rendering GPU; a stream's encoding GPU can be different. Before Wolf can
+identify a profile, Den uses the paired client's alias or ID.
+
+The dashboard requires the fork's `GET /api/v1/status` endpoint (schema version 1). Older Wolf builds
+show an upgrade message. Missing driver metrics appear as **Unavailable**, and a failed refresh keeps
+the previous readings with a stale-data notice. Bitrate is the configured encoder target, not measured
+network throughput. GPU user counts include app owners and connected viewers, deduplicated per GPU.
+
+Home refreshes approximately every five seconds while viewed. All dashboard viewers share one cached
+snapshot. Leaving Home or disconnecting the browser stops that viewer's polling immediately; no
+background dashboard polling runs when nobody is viewing it. Wolf's existing capability cache is read
+without triggering encoder verification or startup probes.

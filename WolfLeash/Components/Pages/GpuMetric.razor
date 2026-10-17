@@ -1,0 +1,17 @@
+@using System.Globalization
+<div class="gpu-metric">
+    <div class="d-flex justify-content-between gap-2"><span>@Label</span><strong>@(Valid ? $"{Value:0}%" : "Unavailable")</strong></div>
+    @if (Valid)
+    {
+        <div class="progress mt-2" style="height: 6px" role="progressbar" aria-label="@Label" aria-valuenow="@Invariant" aria-valuemin="0" aria-valuemax="100"><div class="progress-bar" style="width: @(Invariant)%"></div></div>
+    }
+    else { <div class="progress mt-2" style="height: 6px" aria-hidden="true"></div> }
+    @if (Detail is not null) { <div class="small text-body-secondary mt-1">@Detail</div> }
+</div>
+@code {
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public double? Value { get; set; }
+    [Parameter] public string? Detail { get; set; }
+    private bool Valid => Value is { } value && double.IsFinite(value) && value >= 0 && value <= 100;
+    private string Invariant => Value?.ToString("0.##", CultureInfo.InvariantCulture) ?? "0";
+}

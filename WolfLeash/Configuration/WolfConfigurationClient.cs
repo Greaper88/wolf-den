@@ -19,7 +19,7 @@ public sealed class WolfConfigurationClient : IDisposable
         _storage = storage;
     }
 
-    private static HttpClient CreateClient(IConfiguration configuration)
+    internal static HttpClient CreateClient(IConfiguration configuration)
     {
         var path = configuration["SOCKET_PATH"] ?? "/var/run/wolf/wolf.sock";
         if (path.StartsWith("unix://")) path = path[7..];

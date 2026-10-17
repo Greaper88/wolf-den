@@ -1,9 +1,187 @@
-﻿@page "/"
+@page "/"
+@using WolfLeash.Dashboard
+@using WolfLeash.Database
+@using System.Globalization
+@implements IAsyncDisposable
+@inject DashboardService Dashboard
+@inject DashboardConnection Connection
+@inject IServiceScopeFactory ScopeFactory
 
-<PageTitle>Home</PageTitle>
-<h3>Welcome</h3>
+<PageTitle>Home · Wolf Den</PageTitle>
+<div class="dashboard">
+    <div class="dashboard-heading">
+        <div><h1>System overview</h1><p class="text-body-secondary mb-0">GPU activity, connected users, and running apps.</p></div>
+        <div class="dashboard-refresh">
+            <span class="text-body-secondary small">Refreshes every 5 seconds</span>
+            <button class="btn btn-outline-secondary btn-sm" disabled="@_loading" @onclick="ManualRefreshAsync">Refresh</button>
+        </div>
+    </div>
+    @if (_result.Error is not null)
+    {
+        <div class="alert alert-warning mt-3" role="alert">
+            @_result.Error
+            @if (_result.UpdatedAt is not null) { <span> Showing the last successful update; these values may be out of date.</span> }
+        </div>
+    }
+    @if (_result.Snapshot is not { } snapshot)
+    {
+        @if (_loading) { <p class="mt-4" role="status">Loading system activity…</p> }
+    }
+    else
+    {
+        <div class="dashboard-summary" aria-label="System totals">
+            <div><strong>@snapshot.Gpus.Length</strong><span>GPUs detected</span></div>
+            <div><strong>@_users.Count</strong><span>Users with activity</span></div>
+            <div><strong>@snapshot.Sessions.Count(s => s.Connected == true)</strong><span>Connected clients</span></div>
+            <div><strong>@snapshot.Containers.Length</strong><span>Running containers</span></div>
+        </div>
+        <div class="dashboard-section-heading"><h2>GPUs</h2><span class="text-body-secondary small">@(_result.Error is null ? "Live readings" : "Last known readings")</span></div>
+        @if (snapshot.Gpus.Length == 0)
+        {
+            <div class="dashboard-empty">Wolf has not detected any GPUs.</div>
+        }
+        <div class="gpu-grid">
+            @foreach (var gpu in snapshot.Gpus)
+            {
+                var users = _users.Where(u => u.UsesGpu(gpu.Id)).ToArray();
+                var containers = snapshot.Containers.Count(c => c.GpuId == gpu.Id);
+                var streams = snapshot.Sessions.Count(s => s.Streaming && s.GpuId == gpu.Id);
+                <article class="card gpu-card" @key="gpu.Id">
+                    <div class="card-body">
+                        <div class="gpu-heading"><h3>@gpu.Name</h3><span class="badge @(users.Length > 0 ? "text-bg-success" : "text-bg-secondary")">@(users.Length > 0 ? "In use" : gpu.Accessible ? "Idle" : "Unavailable")</span></div>
+                        <p class="small text-body-secondary gpu-id">@gpu.Id · @gpu.RenderNode</p>
+                        <div class="gpu-counts"><span><strong>@users.Length</strong> @(users.Length == 1 ? "user" : "users")</span><span><strong>@containers</strong> @(containers == 1 ? "container" : "containers")</span><span><strong>@streams</strong> @(streams == 1 ? "stream" : "streams")</span></div>
+                        <div class="gpu-metrics">
+                            <GpuMetric Label="GPU core" Value="gpu.GpuPercent" />
+                            <GpuMetric Label="VRAM" Value="gpu.VramPercent" Detail="@Vram(gpu)" />
+                            <GpuMetric Label="Encoder" Value="gpu.EncoderPercent" />
+                        </div>
+                        <div class="small mt-3"><span class="text-body-secondary">Verified codecs: </span>@(gpu.Codecs.Length > 0 ? string.Join(" · ", gpu.Codecs) : gpu.CapabilityStatus == "pending" ? "Checking…" : "Unavailable")</div>
+                        <div class="small mt-2"><span class="text-body-secondary">Users: </span>@(users.Length > 0 ? string.Join(", ", users.Select(u => u.Name)) : "No active users")</div>
+                    </div>
+                </article>
+            }
+        </div>
+        <p class="text-body-secondary small mt-2">GPU readings cover the whole device. “Unavailable” means the driver did not report that metric. A user may use different GPUs for apps and encoding.</p>
+        <div class="dashboard-section-heading mt-4"><h2>Active users</h2><span class="text-body-secondary small">Includes apps running while disconnected</span></div>
+        @if (_users.Count == 0)
+        {
+            <div class="dashboard-empty">No connected users or running app containers.</div>
+        }
+        @foreach (var user in _users)
+        {
+            <article class="card user-card mb-3" @key="user.Key">
+                <div class="card-body">
+                    <div class="user-heading"><div><h3>@user.Name</h3><span class="small text-body-secondary">@(user.IsProfile ? "Profile" : "Client · profile not identified")</span></div><span class="badge @(user.Connected ? "text-bg-success" : "text-bg-secondary")">@(user.Connected ? "Connected" : user.Sessions.Any(s => s.Connected is null) ? "Connection unknown" : "Disconnected")</span></div>
+                    @if (user.Sessions.Count > 0)
+                    {
+                        <div class="table-responsive mt-3">
+                            <table class="table align-middle mb-0"><caption class="visually-hidden">Connections for @user.Name</caption>
+                                <thead><tr><th>Client / app</th><th>Connection</th><th>Stream</th><th>Target bitrate</th><th>Encoding GPU</th></tr></thead>
+                                <tbody>@foreach (var session in user.Sessions)
+                                {
+                                    <tr><td><strong>@ClientName(session.Id)</strong><div class="small text-body-secondary">@session.App</div></td>
+                                        <td>@(session.Connected == true ? session.Streaming ? "Streaming" : "Connected · no video" : session.Connected == false ? "Disconnected" : "Unknown")</td>
+                                        <td>@if (session.Streaming) { <span>@(session.Codec ?? "Unknown codec")</span><div class="small text-body-secondary">@Resolution(session)</div> } else { <span class="text-body-secondary">No active stream</span> }</td>
+                                        <td>@(session.Streaming && session.BitrateKbps is > 0 ? $"{session.BitrateKbps.Value / 1000d:0.##} Mbps" : "—")</td>
+                                        <td>@(session.Streaming ? GpuName(session.GpuId) : "—")</td></tr>
+                                }</tbody>
+                            </table>
+                        </div>
+                    }
+                    <h4 class="mt-3">Running containers <span class="text-body-secondary">(@user.Containers.Count)</span></h4>
+                    @if (user.Containers.Count == 0) { <p class="text-body-secondary small mb-0">No running app containers.</p> }
+                    else
+                    {
+                        <div class="table-responsive"><table class="table align-middle mb-0"><caption class="visually-hidden">Running containers for @user.Name</caption>
+                            <thead><tr><th>App / container</th><th>Assigned GPU</th></tr></thead>
+                            <tbody>@foreach (var container in user.Containers)
+                            {
+                                <tr><td><strong>@container.App</strong><div class="small text-body-secondary container-name">@container.Name</div></td><td>@GpuName(container.GpuId, container.RenderNode)</td></tr>
+                            }</tbody>
+                        </table></div>
+                    }
+                </div>
+            </article>
+        }
+        @if (_result.UpdatedAt is { } updated)
+        { <p class="small text-body-secondary">Last successful update: @updated.ToString("HH:mm:ss 'UTC'")</p> }
+    }
+</div>
 
-@code
-{
+@code {
+    private readonly CancellationTokenSource _stop = new();
+    private DashboardResult _result = new(null, null, null);
+    private IReadOnlyList<ActiveUser> _users = [];
+    private Dictionary<string, string> _aliases = [];
+    private bool _loading = true;
+    private Task? _poll;
+    private bool _refreshing;
 
+    private CancellationToken _connectionToken = new(canceled: true);
+    protected override Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender) _poll = PollAsync();
+        return Task.CompletedTask;
+    }
+    private async Task PollAsync()
+    {
+        try
+        {
+            while (!_stop.IsCancellationRequested)
+            {
+                _connectionToken = await Connection.WaitAsync(_stop.Token);
+                using var active = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, _connectionToken);
+                try
+                {
+                    while (!active.IsCancellationRequested)
+                    {
+                        await InvokeAsync(() => RefreshAsync(active.Token));
+                        await Task.Delay(TimeSpan.FromSeconds(5), active.Token);
+                    }
+                }
+                catch (OperationCanceledException) when (active.IsCancellationRequested) { }
+            }
+        }
+        catch (OperationCanceledException) when (_stop.IsCancellationRequested) { }
+    }
+    private async Task ManualRefreshAsync()
+    {
+        using var active = CancellationTokenSource.CreateLinkedTokenSource(_stop.Token, _connectionToken);
+        await RefreshAsync(active.Token);
+    }
+    private async Task RefreshAsync(CancellationToken token)
+    {
+        if (_refreshing || token.IsCancellationRequested) return;
+        _refreshing = true;
+        _loading = true;
+        try
+        {
+            _result = await Dashboard.GetAsync(token);
+            using var scope = ScopeFactory.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<WolfLeashDbContext>();
+            _aliases = await db.Clients.AsNoTracking().Where(c => c.Id != null).ToDictionaryAsync(c => c.Id!, c => c.Alias, token);
+            _users = _result.Snapshot?.ActiveUsers(_aliases) ?? [];
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        finally { _loading = false; _refreshing = false; }
+        if (!token.IsCancellationRequested) StateHasChanged();
+    }
+    private string ClientName(string id) => _aliases.TryGetValue(id, out var name) && !string.IsNullOrWhiteSpace(name) ? name : "Client " + id;
+    private string GpuName(string? id, string? node = null)
+    {
+        var gpu = _result.Snapshot?.Gpus.FirstOrDefault(g => g.Id == id);
+        return gpu is not null ? $"{gpu.Name} · {gpu.Id}" : !string.IsNullOrWhiteSpace(node) ? node : id ?? "Unknown";
+    }
+    private static string Resolution(SessionStatus s) => s.Width is > 0 && s.Height is > 0 ? $"{s.Width} × {s.Height}" + (s.Fps is > 0 ? $" · {s.Fps} fps" : "") : "Resolution unavailable";
+    private static string? Vram(GpuStatus gpu) => gpu.VramBytes is > 0
+        ? gpu.VramPercent is { } percent && double.IsFinite(percent) && percent >= 0 && percent <= 100
+            ? $"{gpu.VramBytes.Value * percent / 100 / 1073741824d:0.0} / {gpu.VramBytes.Value / 1073741824d:0.0} GiB"
+            : $"{gpu.VramBytes.Value / 1073741824d:0.0} GiB total" : null;
+    public async ValueTask DisposeAsync()
+    {
+        await _stop.CancelAsync();
+        if (_poll is not null) await _poll;
+        _stop.Dispose();
+    }
 }
