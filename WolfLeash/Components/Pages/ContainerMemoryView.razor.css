@@ -1,0 +1,5 @@
+.container-memory { min-width: 17rem; max-width: 28rem; }
+.memory-heading, .memory-amounts { display: flex; justify-content: space-between; flex-wrap: wrap; gap: .25rem 1rem; }
+.memory-heading { color: var(--bs-secondary-color); }
+.memory-amounts { margin-top: .2rem; font-size: .85rem; }
+.locality-bar { height: 5px; }

@@ -1,0 +1,47 @@
+@using WolfLeash.Dashboard
+@using System.Globalization
+@if (Memory?.LocalNodes is { Length: > 0 } nodes)
+{
+    <div class="container-memory">
+        <div class="memory-heading small"><span>Anonymous RAM</span><strong>@LocalShare</strong></div>
+        @if (Memory.Anon is { TotalBytes: not null } anon)
+        {
+            <div class="memory-amounts"><span>Local <strong>@Bytes(anon.LocalBytes!.Value)</strong></span><span>Remote <strong>@Bytes(anon.RemoteBytes!.Value)</strong></span></div>
+            @if (anon.LocalPercent is { } percent)
+            {
+                var invariant = percent.ToString("0.######", CultureInfo.InvariantCulture);
+                var remote = (100 - percent).ToString("0.######", CultureInfo.InvariantCulture);
+                <div class="progress locality-bar mt-1" role="img" aria-label="@($"Anonymous RAM: {Bytes(anon.LocalBytes.Value)} local, {Bytes(anon.RemoteBytes.Value)} remote")">
+                    <div class="progress-bar" style="width: @(invariant)%"></div><div class="progress-bar bg-warning" style="width: @(remote)%"></div>
+                </div>
+            }
+        }
+        else { <div class="text-body-secondary">Unavailable</div> }
+        <div class="small text-body-secondary mt-1">File/cache: @if (Memory.File is { TotalBytes: not null } file) {<span>@Bytes(file.LocalBytes!.Value) local · @Bytes(file.RemoteBytes!.Value) remote</span>} else {<span>Unavailable</span>}</div>
+        <div class="small text-body-secondary">Local = NUMA @string.Join(", ", nodes.Distinct().Order())</div>
+    </div>
+}
+else
+{
+    <span class="text-body-secondary">Unavailable</span>
+}
+
+@code {
+    [Parameter] public ContainerMemoryStatus? Memory { get; set; }
+    private string LocalShare => Memory?.Anon switch
+    {
+        { TotalBytes: 0 } => "No resident pages",
+        { LocalPercent: { } percent, RemoteBytes: > 0 } when percent >= 99.995 => ">99.99% local",
+        { LocalPercent: { } percent, LocalBytes: > 0 } when percent < .005 => "<0.01% local",
+        { LocalPercent: { } percent } => $"{percent:0.##}% local",
+        _ => "Unavailable"
+    };
+    private static string Bytes(ulong bytes)
+    {
+        string[] units = ["B", "KiB", "MiB", "GiB", "TiB", "PiB", "EiB"];
+        var unit = 0;
+        var value = (double)bytes;
+        while (value >= 1024 && unit < units.Length - 1) { value /= 1024; unit++; }
+        return $"{value:0.##} {units[unit]}";
+    }
+}

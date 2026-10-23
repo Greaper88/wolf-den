@@ -170,17 +170,17 @@
                     else
                     {
                         <div class="table-responsive"><table class="table align-middle mb-0"><caption class="visually-hidden">Running containers for @user.Name</caption>
-                            <thead><tr><th>App / container</th><th>Assigned GPU</th><th>Assigned CPU</th></tr></thead>
+                            <thead><tr><th>App / container</th><th>Assigned GPU</th><th>Assigned CPU</th><th>RAM locality</th></tr></thead>
                             <tbody>@foreach (var container in user.Containers)
                             {
-                                <tr><td><strong>@container.App</strong><div class="small text-body-secondary container-name">@container.Name</div></td><td>@GpuName(container.GpuId, container.RenderNode)</td><td><CpuPlacementView Placement="container.Placement" /></td></tr>
+                                <tr><td><strong>@container.App</strong><div class="small text-body-secondary container-name">@container.Name</div></td><td>@GpuName(container.GpuId, container.RenderNode)</td><td><CpuPlacementView Placement="container.Placement" /></td><td><ContainerMemoryView Memory="container.Memory" /></td></tr>
                             }</tbody>
                         </table></div>
                     }
                 </div>
             </article>
         }
-        <p class="small text-body-secondary">CPU placement is captured when each video worker or app container starts and shows its allowed logical CPUs. A user can have activity on more than one CPU.</p>
+        <p class="small text-body-secondary">CPU placement is captured when each video worker or app container starts and shows its allowed logical CPUs. A user can have activity on more than one CPU. Container RAM locality comes from the kernel's cgroup counters, relative to the NUMA nodes of those assigned CPUs. Anonymous RAM and file/cache are separate; shared memory is included in file/cache. Remote cache pages can be shared or pre-existing. Unavailable means residency or locality could not be determined.</p>
         @if (_result.UpdatedAt is { } updated)
         { <p class="small text-body-secondary">Last successful update: @updated.ToString("HH:mm:ss 'UTC'")</p> }
     }

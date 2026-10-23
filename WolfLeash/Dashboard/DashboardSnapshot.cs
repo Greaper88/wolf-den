@@ -111,6 +111,24 @@ public sealed record ContainerStatus
     public string? GpuId { get; init; }
     public string RenderNode { get; init; } = "";
     public CpuPlacement? Placement { get; init; }
+    public ContainerMemoryStatus? Memory { get; init; }
+}
+public sealed record ContainerMemoryStatus
+{
+    public uint[] LocalNodes { get; init; } = [];
+    public MemoryLocalityBytes? Anon { get; init; }
+    public MemoryLocalityBytes? File { get; init; }
+}
+public sealed record MemoryLocalityBytes
+{
+    public ulong? LocalBytes { get; init; }
+    public ulong? RemoteBytes { get; init; }
+
+    [JsonIgnore]
+    public ulong? TotalBytes => LocalBytes is { } local && RemoteBytes is { } remote && local <= ulong.MaxValue - remote
+        ? local + remote : null;
+    [JsonIgnore]
+    public double? LocalPercent => TotalBytes is > 0 ? LocalBytes!.Value / (double)TotalBytes.Value * 100 : null;
 }
 public sealed record ProfileStatus(string Id, string Name);
 public sealed record ActiveUser(string Key, string Name, bool IsProfile)

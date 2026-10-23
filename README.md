@@ -27,6 +27,30 @@ A NUMA node can cover only part of a socket; the UI keeps the socket,
 NUMA node, and logical CPU IDs distinct. Unavailable placement stays unavailable
 rather than being inferred from the selected GPU.
 
+Running container rows show **RAM locality**: local and remote resident anonymous
+RAM, a local percentage, and a separate file/cache breakdown. Local means the
+NUMA nodes of the container's recorded, accepted CPU mask; a mask spanning several
+nodes treats those nodes as local. Shared memory is already included in file/cache
+and is not added again. Cache pages can predate the container or be shared, so
+remote cache does not establish local memory exhaustion. These numbers describe
+memory charged to the container's cgroup, not all kernel memory or summed process
+RSS. Small amounts remain visible in bytes or KiB. A known zero remains zero;
+missing counters, cgroup v1, or unknown CPU locality show **Unavailable**.
+
+The matching Wolf build needs read-only access to the host's cgroup v2 hierarchy.
+Add the following to the **Wolf** Compose service (Den needs no new mount):
+
+```yaml
+environment:
+  - WOLF_HOST_CGROUP_ROOT=/host/sys/fs/cgroup
+volumes:
+  - /sys/fs/cgroup:/host/sys/fs/cgroup:ro
+```
+
+This is optional monitoring access; it does not change CPU affinity, memory policy,
+or container limits. Collection uses the existing on-demand dashboard requests,
+with no helper containers or background sampler in the running stack.
+
 These fields require the matching Wolf NUMA dashboard API extension. Existing
 version 1 status responses remain usable, with CPU information unavailable.
 The app catalog, profiles, GPU metrics, and viewer-driven refresh behavior are
