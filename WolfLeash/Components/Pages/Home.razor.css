@@ -10,7 +10,9 @@ h4 { font-size: .95rem; font-weight: 600; }
 .dashboard-summary strong { display: block; font-size: 1.9rem; font-weight: 650; line-height: 1.3; }
 .dashboard-summary span { color: var(--bs-secondary-color); font-size: .9rem; }
 .dashboard-section-heading { margin-bottom: 1rem; }
-.cpu-grid, .gpu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; }
+.hardware-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 700px), 1fr)); gap: 1rem; align-items: start; }
+.hardware-group { display: grid; gap: 1rem; min-width: 0; align-content: start; }
+.gpu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; }
 .cpu-list { overflow-wrap: anywhere; }
 .card { border-radius: .65rem; }
 .gpu-id { margin: .45rem 0 .8rem; overflow-wrap: anywhere; }

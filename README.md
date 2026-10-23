@@ -4,8 +4,10 @@ This `dev-NUMA-aware` branch pairs with Wolf's `dev-NUMA-aware` branch and
 `ghcr.io/greaper88/wolf:numa-aware-dev`. Its Den image is
 `ghcr.io/greaper88/wolf-den:numa-aware-dev`.
 
-Home adds detected physical CPU sockets above the existing GPU grid. GPUs are
-ordered by their local CPU socket, with unknown locality last. Each active
+Home groups each detected physical CPU socket directly above its assigned GPU
+cards. Each group wraps as a unit on smaller screens; the GPUs wrap within their
+CPU group. Sockets without GPUs remain visible, while shared or unknown GPU
+locality is shown separately without duplicating cards. Each active
 stream and app container shows its CPU affinity captured at launch, including app CPU
 limits. Later external affinity changes require a new worker or container to be reflected.
 A NUMA node can cover only part of a socket; the UI keeps the socket,

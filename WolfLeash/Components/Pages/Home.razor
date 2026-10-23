@@ -35,60 +35,72 @@
             <div><strong>@snapshot.Sessions.Count(s => s.Connected == true)</strong><span>Connected clients</span></div>
             <div><strong>@snapshot.Containers.Length</strong><span>Running containers</span></div>
         </div>
-        <div class="dashboard-section-heading"><h2>CPUs</h2><span class="text-body-secondary small">Detected physical sockets</span></div>
+        <div class="dashboard-section-heading"><h2>CPUs and GPUs</h2><span class="text-body-secondary small">@(_result.Error is null ? "Live readings" : "Last known readings")</span></div>
         @if (snapshot.Cpus.Length == 0)
         {
-            <div class="dashboard-empty mb-4">CPU topology is unavailable from this Wolf build.</div>
+            <div class="dashboard-empty mb-3">CPU topology is unavailable from this Wolf build.</div>
         }
-        else
-        {
-            <div class="cpu-grid mb-4">
-                @foreach (var cpu in snapshot.Cpus.OrderBy(c => c.Id))
-                {
-                    var users = _users.Where(u => u.UsesCpu(cpu.Id)).ToArray();
-                    var containers = snapshot.Containers.Count(c => c.Placement?.CpuIds.Contains(cpu.Id) == true);
-                    var streams = snapshot.Sessions.Count(s => s.Streaming && s.Placement?.CpuIds.Contains(cpu.Id) == true);
-                    <article class="card cpu-card" @key="cpu.Id">
-                        <div class="card-body">
-                            <div class="gpu-heading"><h3>CPU @cpu.Id</h3><span class="badge @(users.Length > 0 ? "text-bg-success" : "text-bg-secondary")">@(users.Length > 0 ? "In use" : "No assigned activity")</span></div>
-                            <p class="small mt-2 mb-2">@(string.IsNullOrWhiteSpace(cpu.Name) ? "Model unavailable" : cpu.Name)</p>
-                            <div class="small text-body-secondary">@cpu.Cpus.Length logical CPUs · NUMA @(cpu.NumaNodes.Length > 0 ? string.Join(", ", cpu.NumaNodes) : "unavailable")</div>
-                            <div class="small text-body-secondary cpu-list mt-1">Logical CPUs @DashboardTopology.CpuList(cpu.Cpus)</div>
-                            <div class="gpu-counts mt-3 mb-0"><span><strong>@users.Length</strong> @(users.Length == 1 ? "user" : "users")</span><span><strong>@containers</strong> @(containers == 1 ? "container" : "containers")</span><span><strong>@streams</strong> @(streams == 1 ? "stream" : "streams")</span></div>
-                        </div>
-                    </article>
-                }
-            </div>
-        }
-        <div class="dashboard-section-heading"><h2>GPUs</h2><span class="text-body-secondary small">@(_result.Error is null ? "Live readings" : "Last known readings")</span></div>
         @if (snapshot.Gpus.Length == 0)
         {
-            <div class="dashboard-empty">Wolf has not detected any GPUs.</div>
+            <div class="dashboard-empty mb-3">Wolf has not detected any GPUs.</div>
         }
-        <div class="gpu-grid">
-            @foreach (var group in DashboardTopology.GroupGpus(snapshot.Gpus))
+        <div class="hardware-grid">
+            @foreach (var group in DashboardTopology.GroupHardware(snapshot.Cpus, snapshot.Gpus))
             {
-                @foreach (var gpu in group.Gpus)
-                {
-                    var users = _users.Where(u => u.UsesGpu(gpu.Id)).ToArray();
-                    var containers = snapshot.Containers.Count(c => c.GpuId == gpu.Id);
-                    var streams = snapshot.Sessions.Count(s => s.Streaming && s.GpuId == gpu.Id);
-                    <article class="card gpu-card" @key="gpu.Id">
-                        <div class="card-body">
-                            <div class="gpu-heading"><h3>@gpu.Name</h3><span class="badge @(users.Length > 0 ? "text-bg-success" : "text-bg-secondary")">@(users.Length > 0 ? "In use" : gpu.Accessible ? "Idle" : "Unavailable")</span></div>
-                            <p class="small text-body-secondary gpu-id">@gpu.Id · @gpu.RenderNode</p>
-                            <p class="small text-body-secondary">@DashboardTopology.CpuNames(group.CpuIds)@if (gpu.NumaNode is { } node) { <span> · NUMA @node</span> }</p>
-                            <div class="gpu-counts"><span><strong>@users.Length</strong> @(users.Length == 1 ? "user" : "users")</span><span><strong>@containers</strong> @(containers == 1 ? "container" : "containers")</span><span><strong>@streams</strong> @(streams == 1 ? "stream" : "streams")</span></div>
-                            <div class="gpu-metrics">
-                                <GpuMetric Label="GPU core" Value="gpu.GpuPercent" />
-                                <GpuMetric Label="VRAM" Value="gpu.VramPercent" Detail="@Vram(gpu)" />
-                                <GpuMetric Label="Encoder" Value="gpu.EncoderPercent" />
+                <section class="hardware-group" aria-label="@(DashboardTopology.CpuNames(group.CpuIds) + " and assigned GPUs")" @key="group.Key">
+                    @if (group.Cpu is { } cpu)
+                    {
+                        var users = _users.Where(u => u.UsesCpu(cpu.Id)).ToArray();
+                        var containers = snapshot.Containers.Count(c => c.Placement?.CpuIds.Contains(cpu.Id) == true);
+                        var streams = snapshot.Sessions.Count(s => s.Streaming && s.Placement?.CpuIds.Contains(cpu.Id) == true);
+                        <article class="card cpu-card" @key="cpu.Id">
+                            <div class="card-body">
+                                <div class="gpu-heading"><h3>CPU @cpu.Id</h3><span class="badge @(users.Length > 0 ? "text-bg-success" : "text-bg-secondary")">@(users.Length > 0 ? "In use" : "No assigned activity")</span></div>
+                                <p class="small mt-2 mb-2">@(string.IsNullOrWhiteSpace(cpu.Name) ? "Model unavailable" : cpu.Name)</p>
+                                <div class="small text-body-secondary">@cpu.Cpus.Length logical CPUs · NUMA @(cpu.NumaNodes.Length > 0 ? string.Join(", ", cpu.NumaNodes) : "unavailable")</div>
+                                <div class="small text-body-secondary cpu-list mt-1">Logical CPUs @DashboardTopology.CpuList(cpu.Cpus)</div>
+                                <div class="gpu-counts mt-3 mb-0"><span><strong>@users.Length</strong> @(users.Length == 1 ? "user" : "users")</span><span><strong>@containers</strong> @(containers == 1 ? "container" : "containers")</span><span><strong>@streams</strong> @(streams == 1 ? "stream" : "streams")</span></div>
                             </div>
-                            <div class="small mt-3"><span class="text-body-secondary">Verified codecs: </span>@(gpu.Codecs.Length > 0 ? string.Join(" · ", gpu.Codecs) : gpu.CapabilityStatus == "pending" ? "Checking…" : "Unavailable")</div>
-                            <div class="small mt-2"><span class="text-body-secondary">Users: </span>@(users.Length > 0 ? string.Join(", ", users.Select(u => u.Name)) : "No active users")</div>
+                        </article>
+                    }
+                    else
+                    {
+                        <div class="dashboard-empty">
+                            <h3>@DashboardTopology.CpuNames(group.CpuIds)</h3>
+                            @if (group.CpuIds.Length > 0)
+                            {
+                                <div class="small mt-2">@(group.CpuIds.Length > 1 ? "Shared GPU locality" : "CPU topology unavailable")</div>
+                            }
                         </div>
-                    </article>
-                }
+                    }
+                    @if (group.Gpus.Length == 0 && snapshot.Gpus.Length > 0 && group.Cpu is { } emptyCpu)
+                    {
+                        <div class="dashboard-empty">@(snapshot.Gpus.Any(g => g.CpuIds.Contains(emptyCpu.Id)) ? "GPUs with shared CPU locality are listed separately." : "No GPUs assigned to this CPU.")</div>
+                    }
+                    <div class="gpu-grid">
+                        @foreach (var gpu in group.Gpus)
+                        {
+                            var users = _users.Where(u => u.UsesGpu(gpu.Id)).ToArray();
+                            var containers = snapshot.Containers.Count(c => c.GpuId == gpu.Id);
+                            var streams = snapshot.Sessions.Count(s => s.Streaming && s.GpuId == gpu.Id);
+                            <article class="card gpu-card" @key="gpu.Id">
+                                <div class="card-body">
+                                    <div class="gpu-heading"><h3>@gpu.Name</h3><span class="badge @(users.Length > 0 ? "text-bg-success" : "text-bg-secondary")">@(users.Length > 0 ? "In use" : gpu.Accessible ? "Idle" : "Unavailable")</span></div>
+                                    <p class="small text-body-secondary gpu-id">@gpu.Id · @gpu.RenderNode</p>
+                                    <p class="small text-body-secondary">@DashboardTopology.CpuNames(group.CpuIds)@if (gpu.NumaNode is { } node) { <span> · NUMA @node</span> }</p>
+                                    <div class="gpu-counts"><span><strong>@users.Length</strong> @(users.Length == 1 ? "user" : "users")</span><span><strong>@containers</strong> @(containers == 1 ? "container" : "containers")</span><span><strong>@streams</strong> @(streams == 1 ? "stream" : "streams")</span></div>
+                                    <div class="gpu-metrics">
+                                        <GpuMetric Label="GPU core" Value="gpu.GpuPercent" />
+                                        <GpuMetric Label="VRAM" Value="gpu.VramPercent" Detail="@Vram(gpu)" />
+                                        <GpuMetric Label="Encoder" Value="gpu.EncoderPercent" />
+                                    </div>
+                                    <div class="small mt-3"><span class="text-body-secondary">Verified codecs: </span>@(gpu.Codecs.Length > 0 ? string.Join(" · ", gpu.Codecs) : gpu.CapabilityStatus == "pending" ? "Checking…" : "Unavailable")</div>
+                                    <div class="small mt-2"><span class="text-body-secondary">Users: </span>@(users.Length > 0 ? string.Join(", ", users.Select(u => u.Name)) : "No active users")</div>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                </section>
             }
         </div>
         <p class="text-body-secondary small mt-2">GPU readings cover the whole device. “Unavailable” means the driver did not report that metric. A user may use different GPUs for apps and encoding.</p>

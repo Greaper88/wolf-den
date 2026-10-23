@@ -2,6 +2,17 @@ namespace WolfLeash.Dashboard;
 
 public static class DashboardTopology
 {
+    public static IReadOnlyList<CpuHardwareGroup> GroupHardware(IEnumerable<CpuStatus> cpus, IEnumerable<GpuStatus> gpus)
+    {
+        var sockets = cpus.OrderBy(cpu => cpu.Id).ToArray();
+        var gpuGroups = GroupGpus(gpus);
+        return sockets.Select(cpu => new CpuHardwareGroup(cpu, [cpu.Id],
+                gpuGroups.FirstOrDefault(group => group.CpuIds.Length == 1 && group.CpuIds[0] == cpu.Id)?.Gpus ?? []))
+            .Concat(gpuGroups.Where(group => group.CpuIds.Length != 1 || !sockets.Any(cpu => cpu.Id == group.CpuIds[0]))
+                .Select(group => new CpuHardwareGroup(null, group.CpuIds, group.Gpus)))
+            .ToArray();
+    }
+
     // Each GPU appears once, even if its local NUMA node spans several CPU sockets.
     public static IReadOnlyList<GpuCpuGroup> GroupGpus(IEnumerable<GpuStatus> gpus) => gpus
         .GroupBy(gpu => string.Join(",", gpu.CpuIds.Distinct().Order()))
@@ -37,3 +48,7 @@ public static class DashboardTopology
 }
 
 public sealed record GpuCpuGroup(int[] CpuIds, GpuStatus[] Gpus);
+public sealed record CpuHardwareGroup(CpuStatus? Cpu, int[] CpuIds, GpuStatus[] Gpus)
+{
+    public string Key => Cpu is not null ? $"cpu:{Cpu.Id}" : "locality:" + string.Join(",", CpuIds);
+}

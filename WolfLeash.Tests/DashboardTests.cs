@@ -41,6 +41,32 @@ public sealed class DashboardTests
     }
 
     [Fact]
+    public void HardwareGroupsKeepEmptySocketsAndEveryGpuWithoutInventingOrDuplicatingOwners()
+    {
+        CpuStatus[] cpus = [new() { Id = 8 }, new() { Id = 2 }, new() { Id = 4 }];
+        GpuStatus[] gpus = [new() { Id = "b", CpuIds = [8] }, new() { Id = "unknown" },
+                            new() { Id = "a", CpuIds = [2] }, new() { Id = "shared", CpuIds = [8, 2] },
+                            new() { Id = "missing-socket", CpuIds = [10] }];
+        var groups = DashboardTopology.GroupHardware(cpus, gpus);
+        Assert.Equal(new int?[] { 2, 4, 8, null, null, null }, groups.Select(group => group.Cpu?.Id));
+        Assert.Equal("a", Assert.Single(groups[0].Gpus).Id);
+        Assert.Empty(groups[1].Gpus);
+        Assert.Equal("b", Assert.Single(groups[2].Gpus).Id);
+        Assert.Equal(new[] { 2, 8 }, groups[3].CpuIds);
+        Assert.Equal("shared", Assert.Single(groups[3].Gpus).Id);
+        Assert.Equal("missing-socket", Assert.Single(groups[4].Gpus).Id);
+        Assert.Equal("unknown", Assert.Single(groups[5].Gpus).Id);
+        Assert.Equal(gpus.Length, groups.Sum(group => group.Gpus.Length));
+        Assert.Equal(5, groups.SelectMany(group => group.Gpus).Select(gpu => gpu.Id).Distinct().Count());
+        Assert.Equal(groups.Count, groups.Select(group => group.Key).Distinct().Count());
+
+        var legacy = Assert.Single(DashboardTopology.GroupHardware([], [new() { Id = "gpu" }]));
+        Assert.Null(legacy.Cpu);
+        Assert.Empty(legacy.CpuIds);
+        Assert.Equal("gpu", Assert.Single(legacy.Gpus).Id);
+    }
+
+    [Fact]
     public void CpuUsageComesFromEffectiveMasksAndDeduplicatesUsersAcrossAppsAndStreams()
     {
         var snapshot = new DashboardSnapshot
