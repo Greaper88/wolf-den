@@ -1,0 +1,14 @@
+@using WolfLeash.Dashboard
+<GpuMetric Label="@Label" Value="@Usage.UsedPercent" Detail="@Detail" />
+
+@code {
+    [Parameter] public string Label { get; set; } = "RAM used (incl. cache)";
+    [Parameter] public ulong? TotalBytes { get; set; }
+    [Parameter] public ulong? UsedBytes { get; set; }
+    private MemoryUsageTotals Usage => new(TotalBytes, UsedBytes);
+    private string? Detail => TotalBytes is { } total
+        ? UsedBytes is { } used && used <= total
+            ? $"{used / 1073741824d:0.0} / {total / 1073741824d:0.0} GiB"
+            : $"{total / 1073741824d:0.0} GiB total"
+        : null;
+}

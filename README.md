@@ -7,8 +7,21 @@ This `dev-NUMA-aware` branch pairs with Wolf's `dev-NUMA-aware` branch and
 Home groups each detected physical CPU socket directly above its assigned GPU
 cards. Each group wraps as a unit on smaller screens; the GPUs wrap within their
 CPU group. Sockets without GPUs remain visible, while shared or unknown GPU
-locality is shown separately without duplicating cards. Each active
-stream and app container shows its CPU affinity captured at launch, including app CPU
+locality is shown separately without duplicating cards.
+
+CPU cards show whole-socket utilization and used/total RAM, even with NUMA
+placement disabled. Expand **NUMA node memory** for the individual nodes within a
+socket. RAM totals include only nodes belonging exclusively to that socket;
+shared and CPU-less nodes remain separate instead of being counted twice.
+These are OS-usable capacities, not installed DIMM capacities. RAM usage includes
+reclaimable cache (`MemTotal - MemFree`), rather than estimating memory pressure.
+
+CPU usage uses counter differences between dashboard requests. The first sample
+after startup or a long idle interval is unavailable until the next refresh.
+There is no background dashboard sampler. Missing or invalid CPU/RAM readings
+remain unavailable, including on older Wolf builds without these fields.
+
+Each active stream and app container shows its CPU affinity captured at launch, including app CPU
 limits. Later external affinity changes require a new worker or container to be reflected.
 A NUMA node can cover only part of a socket; the UI keeps the socket,
 NUMA node, and logical CPU IDs distinct. Unavailable placement stays unavailable

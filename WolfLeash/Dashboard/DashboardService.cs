@@ -32,7 +32,7 @@ public sealed class DashboardService : IDisposable
                 {
                     response.EnsureSuccessStatusCode();
                     var snapshot = await response.Content.ReadFromJsonAsync<DashboardSnapshot>(DashboardSnapshot.JsonOptions, timeout.Token);
-                    if (snapshot is not { Success: true, Version: 1 } || snapshot.Cpus is null || snapshot.Gpus is null || snapshot.Sessions is null || snapshot.Containers is null || snapshot.Profiles is null)
+                    if (snapshot is not { Success: true, Version: 1 } || snapshot.Cpus is null || snapshot.MemoryNodes is null || snapshot.Gpus is null || snapshot.Sessions is null || snapshot.Containers is null || snapshot.Profiles is null)
                         throw new JsonException("Unsupported dashboard response.");
                     _last = new(snapshot, DateTimeOffset.UtcNow, null);
                 }

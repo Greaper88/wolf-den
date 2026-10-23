@@ -12,7 +12,8 @@ h4 { font-size: .95rem; font-weight: 600; }
 .dashboard-section-heading { margin-bottom: 1rem; }
 .hardware-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 700px), 1fr)); gap: 1rem; align-items: start; }
 .hardware-group { display: grid; gap: 1rem; min-width: 0; align-content: start; }
-.gpu-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; }
+.gpu-grid, .other-memory-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 1rem; }
+.cpu-node-memory summary { cursor: pointer; }
 .cpu-list { overflow-wrap: anywhere; }
 .card { border-radius: .65rem; }
 .gpu-id { margin: .45rem 0 .8rem; overflow-wrap: anywhere; }

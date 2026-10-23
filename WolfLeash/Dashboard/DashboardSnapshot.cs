@@ -8,6 +8,7 @@ public sealed record DashboardSnapshot
     public bool Success { get; init; }
     public int Version { get; init; }
     public CpuStatus[] Cpus { get; init; } = [];
+    public MemoryNodeStatus[] MemoryNodes { get; init; } = [];
     public GpuStatus[] Gpus { get; init; } = [];
     public SessionStatus[] Sessions { get; init; } = [];
     public ContainerStatus[] Containers { get; init; } = [];
@@ -52,6 +53,15 @@ public sealed record CpuStatus
     public string Name { get; init; } = "";
     public uint[] Cpus { get; init; } = [];
     public uint[] NumaNodes { get; init; } = [];
+    public double? UsagePercent { get; init; }
+}
+public sealed record MemoryNodeStatus
+{
+    public int Id { get; init; }
+    public int[] CpuIds { get; init; } = [];
+    public ulong? TotalBytes { get; init; }
+    public ulong? UsedBytes { get; init; }
+    public double? UsedPercent { get; init; }
 }
 public sealed record CpuPlacement
 {

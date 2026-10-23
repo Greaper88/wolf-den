@@ -2,6 +2,33 @@ namespace WolfLeash.Dashboard;
 
 public static class DashboardTopology
 {
+    public static MemoryUsageTotals? CpuMemory(CpuStatus cpu, IEnumerable<MemoryNodeStatus> nodes)
+    {
+        var ids = cpu.NumaNodes.Distinct().ToArray();
+        if (ids.Length == 0) return null;
+        var memory = nodes.ToArray();
+        ulong total = 0, used = 0;
+        var totalKnown = true;
+        var usedKnown = true;
+        foreach (var id in ids)
+        {
+            var matches = memory.Where(node => node.Id >= 0 && (uint)node.Id == id).ToArray();
+            if (matches.Length != 1 || !matches[0].CpuIds.Distinct().SequenceEqual([cpu.Id])) return null;
+            var node = matches[0];
+            if (node.TotalBytes is not { } capacity || capacity > ulong.MaxValue - total)
+            {
+                totalKnown = false;
+                usedKnown = false;
+                continue;
+            }
+            total += capacity;
+            if (node.UsedBytes is not { } occupied || occupied > capacity || occupied > ulong.MaxValue - used)
+                usedKnown = false;
+            else used += occupied;
+        }
+        return new(totalKnown ? total : null, totalKnown && usedKnown ? used : null);
+    }
+
     public static IReadOnlyList<CpuHardwareGroup> GroupHardware(IEnumerable<CpuStatus> cpus, IEnumerable<GpuStatus> gpus)
     {
         var sockets = cpus.OrderBy(cpu => cpu.Id).ToArray();
@@ -48,6 +75,11 @@ public static class DashboardTopology
 }
 
 public sealed record GpuCpuGroup(int[] CpuIds, GpuStatus[] Gpus);
+public sealed record MemoryUsageTotals(ulong? TotalBytes, ulong? UsedBytes)
+{
+    public double? UsedPercent => TotalBytes is > 0 && UsedBytes is { } used && used <= TotalBytes.Value
+        ? 100d * used / TotalBytes.Value : null;
+}
 public sealed record CpuHardwareGroup(CpuStatus? Cpu, int[] CpuIds, GpuStatus[] Gpus)
 {
     public string Key => Cpu is not null ? $"cpu:{Cpu.Id}" : "locality:" + string.Join(",", CpuIds);

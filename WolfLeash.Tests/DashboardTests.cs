@@ -12,7 +12,8 @@ public sealed class DashboardTests
     {
         var snapshot = JsonSerializer.Deserialize<DashboardSnapshot>("""
             {"success":true,"version":1,
-             "cpus":[{"id":0,"name":"CPU model","cpus":[0,1,4,5],"numa_nodes":[0,2]}],
+             "cpus":[{"id":0,"name":"CPU model","cpus":[0,1,4,5],"numa_nodes":[0,2],"usage_percent":"37.5"}],
+             "memory_nodes":[{"id":0,"cpu_ids":[0],"total_bytes":"8589934592","used_bytes":"0","used_percent":0}],
              "gpus":[{"id":"gpu","cpu_ids":[0],"numa_node":2,"local_cpus":[4,5]}],
              "containers":[{"id":"app","placement":{"cpu_ids":[0],"numa_node":2,"cpus":[5]}}],
              "sessions":[{"id":"client","connected":true,"streaming":true,
@@ -21,6 +22,11 @@ public sealed class DashboardTests
         var cpu = Assert.Single(snapshot.Cpus);
         Assert.Equal(new uint[] { 0, 2 }, cpu.NumaNodes);
         Assert.Equal(new uint[] { 0, 1, 4, 5 }, cpu.Cpus);
+        Assert.Equal(37.5, cpu.UsagePercent);
+        var memory = Assert.Single(snapshot.MemoryNodes);
+        Assert.Equal(8589934592UL, memory.TotalBytes);
+        Assert.Equal(0UL, memory.UsedBytes);
+        Assert.Equal(0d, memory.UsedPercent);
         Assert.Equal(2, snapshot.Gpus[0].NumaNode);
         Assert.Equal(new uint[] { 5 }, snapshot.Containers[0].Placement!.Cpus);
         Assert.Equal(new uint[] { 8, 9 }, snapshot.Sessions[0].Placement!.Cpus);
@@ -38,6 +44,45 @@ public sealed class DashboardTests
         Assert.Equal(new[] { 2, 8 }, groups[1].CpuIds);
         Assert.Empty(groups[^1].CpuIds);
         Assert.Equal(5, groups.Sum(g => g.Gpus.Length));
+    }
+
+    [Fact]
+    public void SocketRamTotalsCombineAllItsNodesWithoutDuplicatingSharedOrMissingMemory()
+    {
+        var cpu = new CpuStatus { Id = 0, NumaNodes = [2, 0, 2] };
+        MemoryNodeStatus[] nodes = [new() { Id = 0, CpuIds = [0], TotalBytes = 100, UsedBytes = 25 },
+                                    new() { Id = 2, CpuIds = [0, 0], TotalBytes = 300, UsedBytes = 150 }];
+        var totals = DashboardTopology.CpuMemory(cpu, nodes)!;
+        Assert.Equal(400UL, totals.TotalBytes);
+        Assert.Equal(175UL, totals.UsedBytes);
+        Assert.Equal(43.75, totals.UsedPercent);
+        Assert.Null(DashboardTopology.CpuMemory(cpu, [nodes[0]]));
+        Assert.Null(DashboardTopology.CpuMemory(cpu, [nodes[0], nodes[1], nodes[1]]));
+        Assert.Null(DashboardTopology.CpuMemory(cpu, [nodes[0], nodes[1] with { CpuIds = [0, 1] }]));
+        Assert.Null(DashboardTopology.CpuMemory(cpu, [nodes[0], nodes[1] with { CpuIds = [] }]));
+
+        totals = DashboardTopology.CpuMemory(cpu, [nodes[0], nodes[1] with { UsedBytes = null }])!;
+        Assert.Equal(400UL, totals.TotalBytes);
+        Assert.Null(totals.UsedBytes);
+        Assert.Null(totals.UsedPercent);
+        totals = DashboardTopology.CpuMemory(cpu, [nodes[0], nodes[1] with { UsedBytes = 301 }])!;
+        Assert.Null(totals.UsedPercent);
+        totals = DashboardTopology.CpuMemory(cpu, [nodes[0] with { TotalBytes = ulong.MaxValue }, nodes[1]])!;
+        Assert.Null(totals.TotalBytes);
+        Assert.Null(totals.UsedPercent);
+        Assert.Equal(0d, new MemoryUsageTotals(100, 0).UsedPercent);
+        Assert.Null(new MemoryUsageTotals(0, 0).UsedPercent);
+    }
+
+    [Fact]
+    public void MissingUsageFieldsOnOlderCpuResponsesRemainUnknown()
+    {
+        var snapshot = JsonSerializer.Deserialize<DashboardSnapshot>("""
+            {"success":true,"version":1,"cpus":[{"id":0,"numa_nodes":[0]}]}
+            """, DashboardSnapshot.JsonOptions)!;
+        Assert.Null(Assert.Single(snapshot.Cpus).UsagePercent);
+        Assert.Empty(snapshot.MemoryNodes);
+        Assert.Null(DashboardTopology.CpuMemory(snapshot.Cpus[0], snapshot.MemoryNodes));
     }
 
     [Fact]

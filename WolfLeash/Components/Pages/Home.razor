@@ -53,6 +53,8 @@
                         var users = _users.Where(u => u.UsesCpu(cpu.Id)).ToArray();
                         var containers = snapshot.Containers.Count(c => c.Placement?.CpuIds.Contains(cpu.Id) == true);
                         var streams = snapshot.Sessions.Count(s => s.Streaming && s.Placement?.CpuIds.Contains(cpu.Id) == true);
+                        var memory = DashboardTopology.CpuMemory(cpu, snapshot.MemoryNodes);
+                        var nodes = snapshot.MemoryNodes.Where(n => n.CpuIds.Distinct().SequenceEqual([cpu.Id])).OrderBy(n => n.Id).ToArray();
                         <article class="card cpu-card" @key="cpu.Id">
                             <div class="card-body">
                                 <div class="gpu-heading"><h3>CPU @cpu.Id</h3><span class="badge @(users.Length > 0 ? "text-bg-success" : "text-bg-secondary")">@(users.Length > 0 ? "In use" : "No assigned activity")</span></div>
@@ -60,6 +62,22 @@
                                 <div class="small text-body-secondary">@cpu.Cpus.Length logical CPUs · NUMA @(cpu.NumaNodes.Length > 0 ? string.Join(", ", cpu.NumaNodes) : "unavailable")</div>
                                 <div class="small text-body-secondary cpu-list mt-1">Logical CPUs @DashboardTopology.CpuList(cpu.Cpus)</div>
                                 <div class="gpu-counts mt-3 mb-0"><span><strong>@users.Length</strong> @(users.Length == 1 ? "user" : "users")</span><span><strong>@containers</strong> @(containers == 1 ? "container" : "containers")</span><span><strong>@streams</strong> @(streams == 1 ? "stream" : "streams")</span></div>
+                                <div class="gpu-metrics mt-3">
+                                    <GpuMetric Label="CPU usage" Value="cpu.UsagePercent" />
+                                    <RamMetric TotalBytes="memory?.TotalBytes" UsedBytes="memory?.UsedBytes" />
+                                </div>
+                                @if (nodes.Length > 0)
+                                {
+                                    <details class="cpu-node-memory mt-3">
+                                        <summary class="small">NUMA node memory (@nodes.Length)</summary>
+                                        <div class="gpu-metrics mt-3">
+                                            @foreach (var nodeMemory in nodes)
+                                            {
+                                                <RamMetric Label="@($"NUMA {nodeMemory.Id} RAM")" TotalBytes="nodeMemory.TotalBytes" UsedBytes="nodeMemory.UsedBytes" @key="nodeMemory.Id" />
+                                            }
+                                        </div>
+                                    </details>
+                                }
                             </div>
                         </article>
                     }
@@ -103,7 +121,23 @@
                 </section>
             }
         </div>
-        <p class="text-body-secondary small mt-2">GPU readings cover the whole device. “Unavailable” means the driver did not report that metric. A user may use different GPUs for apps and encoding.</p>
+        var otherMemory = snapshot.MemoryNodes.Where(n => n.CpuIds.Distinct().Count() != 1 || !snapshot.Cpus.Any(c => c.Id == n.CpuIds[0])).OrderBy(n => n.Id).ToArray();
+        @if (otherMemory.Length > 0)
+        {
+            <div class="other-memory-grid mt-3">
+                @foreach (var nodeMemory in otherMemory)
+                {
+                    <article class="card" @key="nodeMemory.Id">
+                        <div class="card-body">
+                            <h3>NUMA @nodeMemory.Id memory</h3>
+                            <p class="small text-body-secondary mt-2">@(nodeMemory.CpuIds.Length == 0 ? "No CPU socket identified" : DashboardTopology.CpuNames(nodeMemory.CpuIds)) · excluded from per-CPU totals</p>
+                            <RamMetric TotalBytes="nodeMemory.TotalBytes" UsedBytes="nodeMemory.UsedBytes" />
+                        </div>
+                    </article>
+                }
+            </div>
+        }
+        <p class="text-body-secondary small mt-2">CPU and GPU readings cover the whole device. RAM usage includes cache and is grouped by where the memory resides. “Unavailable” means that metric could not be reported. A user may use different GPUs for apps and encoding.</p>
         <div class="dashboard-section-heading mt-4"><h2>Active users</h2><span class="text-body-secondary small">Includes apps running while disconnected</span></div>
         @if (_users.Count == 0)
         {
