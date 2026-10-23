@@ -1,0 +1,14 @@
+@using WolfLeash.Dashboard
+@if (Placement is { Cpus.Length: > 0 } placement)
+{
+    <span>@DashboardTopology.CpuNames(placement.CpuIds)@if (placement.NumaNode is { } node) {<span> · NUMA @node</span>}</span>
+    <div class="small text-body-secondary">Logical CPUs @DashboardTopology.CpuList(placement.Cpus)</div>
+}
+else
+{
+    <span class="text-body-secondary">Unavailable</span>
+}
+
+@code {
+    [Parameter] public CpuPlacement? Placement { get; set; }
+}

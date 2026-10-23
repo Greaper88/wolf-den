@@ -8,6 +8,81 @@ namespace WolfLeash.Tests;
 public sealed class DashboardTests
 {
     [Fact]
+    public void NumaStatusDeserializesSocketTopologyAndIndependentEffectivePlacements()
+    {
+        var snapshot = JsonSerializer.Deserialize<DashboardSnapshot>("""
+            {"success":true,"version":1,
+             "cpus":[{"id":0,"name":"CPU model","cpus":[0,1,4,5],"numa_nodes":[0,2]}],
+             "gpus":[{"id":"gpu","cpu_ids":[0],"numa_node":2,"local_cpus":[4,5]}],
+             "containers":[{"id":"app","placement":{"cpu_ids":[0],"numa_node":2,"cpus":[5]}}],
+             "sessions":[{"id":"client","connected":true,"streaming":true,
+                          "placement":{"cpu_ids":[1],"numa_node":1,"cpus":["8","9"]}}]}
+            """, DashboardSnapshot.JsonOptions)!;
+        var cpu = Assert.Single(snapshot.Cpus);
+        Assert.Equal(new uint[] { 0, 2 }, cpu.NumaNodes);
+        Assert.Equal(new uint[] { 0, 1, 4, 5 }, cpu.Cpus);
+        Assert.Equal(2, snapshot.Gpus[0].NumaNode);
+        Assert.Equal(new uint[] { 5 }, snapshot.Containers[0].Placement!.Cpus);
+        Assert.Equal(new uint[] { 8, 9 }, snapshot.Sessions[0].Placement!.Cpus);
+        Assert.Equal(new[] { 1 }, snapshot.Sessions[0].Placement!.CpuIds);
+    }
+
+    [Fact]
+    public void GpusAreOrderedByPhysicalCpuAndUnknownLocalityComesLastWithoutDuplicates()
+    {
+        GpuStatus[] gpus = [new() { Id = "z", CpuIds = [8] }, new() { Id = "unknown" },
+                            new() { Id = "b", CpuIds = [2] }, new() { Id = "a", CpuIds = [2] },
+                            new() { Id = "shared", CpuIds = [8, 2, 8] }];
+        var groups = DashboardTopology.GroupGpus(gpus);
+        Assert.Equal(new[] { "a", "b", "shared", "z", "unknown" }, groups.SelectMany(g => g.Gpus).Select(g => g.Id));
+        Assert.Equal(new[] { 2, 8 }, groups[1].CpuIds);
+        Assert.Empty(groups[^1].CpuIds);
+        Assert.Equal(5, groups.Sum(g => g.Gpus.Length));
+    }
+
+    [Fact]
+    public void CpuUsageComesFromEffectiveMasksAndDeduplicatesUsersAcrossAppsAndStreams()
+    {
+        var snapshot = new DashboardSnapshot
+        {
+            Containers = [new() { Id = "app", ProfileId = "p", Placement = new() { CpuIds = [0] } },
+                          new() { Id = "unknown", ProfileId = "u", GpuId = "gpu" }],
+            Sessions = [new() { Id = "c", ProfileId = "p", Connected = true, Streaming = true,
+                               Placement = new() { CpuIds = [0, 1] } },
+                        new() { Id = "paused", ProfileId = "p", Placement = new() { CpuIds = [2] } }],
+            Gpus = [new() { Id = "gpu", CpuIds = [2] }]
+        };
+        var users = snapshot.ActiveUsers(new Dictionary<string, string>());
+        var user = Assert.Single(users, u => u.Key == "profile:p");
+        Assert.True(user.UsesCpu(0));
+        Assert.True(user.UsesCpu(1));
+        Assert.False(user.UsesCpu(2));
+        Assert.Equal(1, users.Count(u => u.UsesCpu(0)));
+        Assert.False(Assert.Single(users, u => u.Key == "profile:u").UsesCpu(2));
+    }
+
+    [Theory]
+    [InlineData(new uint[] { }, "")]
+    [InlineData(new uint[] { 4, 1, 0, 4, 8, 3, 2, 9 }, "0–4, 8–9")]
+    [InlineData(new uint[] { 0, uint.MaxValue }, "0, 4294967295")]
+    public void LogicalCpuListsAreCompactAndSorted(uint[] cpus, string expected) =>
+        Assert.Equal(expected, DashboardTopology.CpuList(cpus));
+
+    [Fact]
+    public void OlderStatusRemainsUsableWithoutInventingCpuAssignments()
+    {
+        var snapshot = JsonSerializer.Deserialize<DashboardSnapshot>("""
+            {"success":true,"version":1,"gpus":[{"id":"gpu"}],"sessions":[{"id":"c"}],"containers":[{"id":"app"}]}
+            """, DashboardSnapshot.JsonOptions)!;
+        Assert.Empty(snapshot.Cpus);
+        Assert.Empty(snapshot.Gpus[0].CpuIds);
+        Assert.Null(snapshot.Sessions[0].Placement);
+        Assert.Null(snapshot.Containers[0].Placement);
+        Assert.Equal("CPU locality unavailable", DashboardTopology.CpuNames([]));
+        Assert.Equal("CPUs 2, 10", DashboardTopology.CpuNames([10, 2, 2]));
+    }
+
+    [Fact]
     public void SharedAppOwnerAndViewerStaySeparateAndGpuCountsDoNotDuplicateUsers()
     {
         var snapshot = new DashboardSnapshot

@@ -1,3 +1,22 @@
+# NUMA-aware Wolf Den
+
+This `dev-NUMA-aware` branch pairs with Wolf's `dev-NUMA-aware` branch and
+`ghcr.io/greaper88/wolf:numa-aware-dev`. Its Den image is
+`ghcr.io/greaper88/wolf-den:numa-aware-dev`.
+
+Home adds detected physical CPU sockets above the existing GPU grid. GPUs are
+ordered by their local CPU socket, with unknown locality last. Each active
+stream and app container shows its CPU affinity captured at launch, including app CPU
+limits. Later external affinity changes require a new worker or container to be reflected.
+A NUMA node can cover only part of a socket; the UI keeps the socket,
+NUMA node, and logical CPU IDs distinct. Unavailable placement stays unavailable
+rather than being inferred from the selected GPU.
+
+These fields require the matching Wolf NUMA dashboard API extension. Existing
+version 1 status responses remain usable, with CPU information unavailable.
+The app catalog, profiles, GPU metrics, and viewer-driven refresh behavior are
+unchanged. Use the NUMA Den image in place of `:main` in the examples below.
+
 # Wolf Den
 
 A web UI for managing Wolf

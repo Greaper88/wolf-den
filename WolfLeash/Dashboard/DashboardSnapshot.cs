@@ -7,6 +7,7 @@ public sealed record DashboardSnapshot
 {
     public bool Success { get; init; }
     public int Version { get; init; }
+    public CpuStatus[] Cpus { get; init; } = [];
     public GpuStatus[] Gpus { get; init; } = [];
     public SessionStatus[] Sessions { get; init; } = [];
     public ContainerStatus[] Containers { get; init; } = [];
@@ -45,6 +46,19 @@ public sealed record DashboardSnapshot
     }
 }
 
+public sealed record CpuStatus
+{
+    public int Id { get; init; }
+    public string Name { get; init; } = "";
+    public uint[] Cpus { get; init; } = [];
+    public uint[] NumaNodes { get; init; } = [];
+}
+public sealed record CpuPlacement
+{
+    public uint[] Cpus { get; init; } = [];
+    public int[] CpuIds { get; init; } = [];
+    public int? NumaNode { get; init; }
+}
 public sealed record GpuStatus
 {
     public string Id { get; init; } = "";
@@ -55,6 +69,9 @@ public sealed record GpuStatus
     public double? VramPercent { get; init; }
     public double? GpuPercent { get; init; }
     public double? EncoderPercent { get; init; }
+    public int[] CpuIds { get; init; } = [];
+    public int? NumaNode { get; init; }
+    public uint[] LocalCpus { get; init; } = [];
     public string CapabilityStatus { get; init; } = "unknown";
     public string[] Codecs { get; init; } = [];
 }
@@ -71,6 +88,7 @@ public sealed record SessionStatus
     public int? Width { get; init; }
     public int? Height { get; init; }
     public int? Fps { get; init; }
+    public CpuPlacement? Placement { get; init; }
 }
 public sealed record ContainerStatus
 {
@@ -82,6 +100,7 @@ public sealed record ContainerStatus
     public string? SessionId { get; init; }
     public string? GpuId { get; init; }
     public string RenderNode { get; init; } = "";
+    public CpuPlacement? Placement { get; init; }
 }
 public sealed record ProfileStatus(string Id, string Name);
 public sealed record ActiveUser(string Key, string Name, bool IsProfile)
@@ -89,6 +108,7 @@ public sealed record ActiveUser(string Key, string Name, bool IsProfile)
     public List<SessionStatus> Sessions { get; } = [];
     public List<ContainerStatus> Containers { get; } = [];
     public bool Connected => Sessions.Any(s => s.Connected == true);
+    public bool UsesCpu(int id) => Containers.Any(c => c.Placement?.CpuIds.Contains(id) == true) || Sessions.Any(s => s.Streaming && s.Placement?.CpuIds.Contains(id) == true);
     public bool UsesGpu(string id) => Containers.Any(c => c.GpuId == id) || Sessions.Any(s => (s.Connected == true || s.Streaming) && s.GpuId == id);
 }
 public sealed record DashboardResult(DashboardSnapshot? Snapshot, DateTimeOffset? UpdatedAt, string? Error);
