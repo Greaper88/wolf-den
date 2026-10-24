@@ -32,6 +32,7 @@ public sealed class CatalogState
     public List<string> RemovedSources { get; set; } = [];
     public List<CatalogApp> Apps { get; set; } = [];
     public List<ProfileAppLink> Links { get; set; } = [];
+    public Dictionary<string, ProfileTimeZoneSetting> ProfileTimeZones { get; set; } = new();
 }
 
 public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, WolfConfigurationClient wolf,
@@ -39,22 +40,14 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
 {
     private readonly SemaphoreSlim _gate = new(1, 1);
     private const string FileName = "app-catalog.json";
+    private const string PendingFileName = "pending-profile-update.json";
     private bool _seedAttempted;
     public string? SourceStatus { get; private set; }
 
     private async Task<CatalogState> ReadAsync()
     {
-        var path = Path.Combine(storage.DirectoryPath, FileName);
-        CatalogState state;
-        if (File.Exists(path))
-        {
-            await using var file = File.OpenRead(path);
-            state = await JsonSerializer.DeserializeAsync<CatalogState>(file)
-                ?? throw new InvalidDataException("The app catalog is empty or invalid.");
-            if (state.Version != 1) throw new InvalidDataException($"Unsupported app catalog version {state.Version}.");
-        }
-        else state = new();
-
+        await RecoverPendingAsync();
+        var state = await ReadStoredAsync();
         if (!state.LegacyImported)
         {
             using var scope = scopes.CreateScope();
@@ -66,6 +59,108 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
             await storage.WriteAsync(FileName, state);
         }
         return state;
+    }
+
+    private async Task<CatalogState> ReadStoredAsync()
+    {
+        var path = Path.Combine(storage.DirectoryPath, FileName);
+        CatalogState state;
+        if (File.Exists(path))
+        {
+            await using var file = File.OpenRead(path);
+            state = await JsonSerializer.DeserializeAsync<CatalogState>(file)
+                ?? throw new InvalidDataException("The app catalog is empty or invalid.");
+            if (state.Version != 1) throw new InvalidDataException($"Unsupported app catalog version {state.Version}.");
+            if (state.ProfileTimeZones is null) throw new InvalidDataException("Profile timezone settings are invalid.");
+        }
+        else state = new();
+
+        return state;
+    }
+
+    private sealed class PendingProfileUpdate
+    {
+        public PendingProfileUpdate() { }
+        public int Version { get; set; } = 1;
+        public required CatalogState Before { get; set; }
+        public required CatalogState After { get; set; }
+        public JsonObject? Expected { get; set; }
+        public JsonObject? Updated { get; set; }
+    }
+
+    private static CatalogState CopyState(CatalogState state) =>
+        JsonSerializer.Deserialize<CatalogState>(JsonSerializer.Serialize(state))!;
+
+    private static bool SameState(CatalogState first, CatalogState second) =>
+        JsonNode.DeepEquals(JsonSerializer.SerializeToNode(first), JsonSerializer.SerializeToNode(second));
+
+    private async Task RecoverPendingAsync()
+    {
+        var path = Path.Combine(storage.DirectoryPath, PendingFileName);
+        if (Directory.Exists(path))
+            throw new InvalidDataException($"The recovery path {PendingFileName} is a directory. It was left untouched; profile updates cannot continue until recovery storage is available.");
+        if (!File.Exists(path)) return;
+        PendingProfileUpdate pending;
+        try
+        {
+            await using var file = File.OpenRead(path);
+            pending = await JsonSerializer.DeserializeAsync<PendingProfileUpdate>(file)
+                ?? throw new InvalidDataException("The pending profile update is empty.");
+            if (pending.Version != 1 || pending.Before is null || pending.After is null ||
+                (pending.Expected is null && pending.Updated is null))
+                throw new InvalidDataException("The pending profile update has an unsupported format.");
+        }
+        catch (JsonException error)
+        {
+            throw new InvalidDataException($"The pending profile update is invalid. Its recovery data remains in {PendingFileName}.", error);
+        }
+        var profileId = pending.Expected?.Text("id") ?? pending.Updated!.Text("id");
+        if (string.IsNullOrEmpty(profileId) ||
+            (pending.Expected is not null && pending.Updated is not null && pending.Updated.Text("id") != profileId))
+            throw new InvalidDataException($"The pending profile update has inconsistent profile IDs. Recovery data remains in {PendingFileName}.");
+
+        var current = await ReadStoredAsync();
+        if (SameState(current, pending.After))
+        {
+            File.Delete(path);
+            return;
+        }
+        if (!SameState(current, pending.Before))
+            throw new InvalidOperationException($"The catalog changed while a profile update was pending. Recovery data remains in {PendingFileName}; it was not overwritten.");
+
+        var actual = (await wolf.GetProfilesAsync()).SingleOrDefault(profile => profile.Text("id") == profileId);
+        if (JsonNode.DeepEquals(actual, pending.Updated))
+            await storage.WriteAsync(FileName, pending.After);
+        else if (!JsonNode.DeepEquals(actual, pending.Expected))
+            throw new InvalidOperationException($"Wolf's profile changed while an update was pending. Recovery data remains in {PendingFileName}; no profile was changed during recovery.");
+        // A deletion failure intentionally prevents another update from replacing
+        // this journal. The next read retries reconciliation before any mutation.
+        File.Delete(path);
+    }
+
+    private async Task PersistProfileUpdateAsync(CatalogState before, CatalogState after,
+        JsonObject? expected, JsonObject? updated, Func<Task> writeWolf)
+    {
+        if (JsonNode.DeepEquals(expected, updated))
+        {
+            // A timezone may change on an empty profile without changing Wolf's
+            // JSON. Retain the normal stale-profile protection without rewriting it.
+            var actual = (await wolf.GetProfilesAsync()).SingleOrDefault(profile => profile.Text("id") == expected!.Text("id"));
+            if (!JsonNode.DeepEquals(actual, expected))
+                throw new InvalidOperationException("This profile changed in Wolf-UI or another browser. Reload before saving.");
+            await storage.WriteAsync(FileName, after);
+            return;
+        }
+        var path = Path.Combine(storage.DirectoryPath, PendingFileName);
+        if (File.Exists(path))
+            throw new InvalidOperationException($"A profile update is still pending. Reload to recover {PendingFileName} before saving again.");
+        await storage.WriteAsync(PendingFileName, new PendingProfileUpdate
+        {
+            Before = before, After = after, Expected = expected, Updated = updated
+        });
+        await writeWolf();
+        await storage.WriteAsync(FileName, after);
+        File.Delete(path);
     }
 
     public async Task<CatalogState> GetAsync()
@@ -157,9 +252,19 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
         {
             var state = await ReadAsync();
             foreach (var profile in profiles)
-            foreach (var app in profile.Objects("apps"))
+            foreach (var actual in profile.Objects("apps"))
             {
-                if (state.Links.Any(l => l.ProfileId == profile.Text("id") && l.AppId == app.Text("id"))) continue;
+                var timezone = state.ProfileTimeZones.GetValueOrDefault(profile.Text("id"));
+                var app = ProfileTimeZones.Unapply(actual, timezone);
+                var trackedId = ProfileTimeZones.ResolveTrackedAppId(actual, timezone);
+                var profileLinks = state.Links.Where(l => l.ProfileId == profile.Text("id")).ToList();
+                var existingLink = profileLinks.SingleOrDefault(l => l.AppId == app.Text("id"))
+                    ?? profileLinks.SingleOrDefault(l => l.AppId == trackedId);
+                if (existingLink is not null)
+                {
+                    existingLink.AppId = app.Text("id");
+                    continue;
+                }
                 var entry = FindEntry(state, app);
                 if (entry is null)
                 {
@@ -228,42 +333,55 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
             var count = 0;
             foreach (var profile in profiles)
             {
+                var before = CopyState(state);
                 var updated = profile.Copy();
-                var links = state.Links.Where(l => l.ProfileId == profile.Text("id") &&
-                    (catalogId is null || l.CatalogId == catalogId)).ToList();
-                foreach (var link in links)
+                var timezone = state.ProfileTimeZones.GetValueOrDefault(profile.Text("id"));
+                var nextTimezone = timezone is null ? null : new ProfileTimeZoneSetting { TimeZone = timezone.TimeZone };
+                var profileLinks = state.Links.Where(l => l.ProfileId == profile.Text("id")).ToList();
+                var links = profileLinks.Where(l => catalogId is null || l.CatalogId == catalogId).ToList();
+                var apps = (JsonArray?)updated["apps"];
+                foreach (var actual in updated.Objects("apps"))
                 {
-                    var entry = state.Apps.SingleOrDefault(a => a.Id == link.CatalogId);
-                    var apps = (JsonArray?)updated["apps"];
-                    var actual = updated.Objects("apps").SingleOrDefault(a => a.Text("id") == link.AppId);
-                    if (entry is null || actual is null || apps is null) continue;
-                    var rebased = MountDefaults.RebaseApp(link.Baseline, entry.Definition, actual);
-                    link.IconOverride = GetIconOverride(link, actual);
-                    if (link.IconOverride is not null) rebased["icon_png_path"] = link.IconOverride;
-                    apps[apps.IndexOf(actual)] = rebased;
-                }
-                if (!JsonNode.DeepEquals(profile, updated))
-                {
-                    await wolf.ReplaceProfileAsync(profile, updated);
-                    count++;
+                    var app = ProfileTimeZones.Unapply(actual, timezone);
+                    var trackedId = ProfileTimeZones.ResolveTrackedAppId(actual, timezone);
+                    var link = profileLinks.SingleOrDefault(l => l.AppId == actual.Text("id"))
+                        ?? profileLinks.SingleOrDefault(l => l.AppId == trackedId);
+                    if (link is not null) link.AppId = actual.Text("id");
+                    var entry = state.Apps.SingleOrDefault(a => a.Id == link?.CatalogId);
+                    if (link is not null && entry is not null && links.Contains(link))
+                    {
+                        app = MountDefaults.RebaseApp(link.Baseline, entry.Definition, app);
+                        link.IconOverride = GetIconOverride(link, actual);
+                        if (link.IconOverride is not null) app["icon_png_path"] = link.IconOverride;
+                    }
+                    if (nextTimezone is not null && app.Runner().Text("type").Equals("docker", StringComparison.OrdinalIgnoreCase))
+                        app = ProfileTimeZones.Apply(app, nextTimezone.TimeZone, nextTimezone);
+                    if (apps is not null) apps[apps.IndexOf(actual)] = app;
                 }
                 foreach (var link in links)
                     if (state.Apps.SingleOrDefault(a => a.Id == link.CatalogId) is { } entry)
                         link.Baseline = entry.Definition.Copy();
+                SetTimeZone(state, profile.Text("id"), nextTimezone);
                 // Record each successful profile independently; retry can resume after a connection failure.
-                await storage.WriteAsync(FileName, state);
+                await PersistProfileUpdateAsync(before, state, profile, updated,
+                    () => wolf.ReplaceProfileAsync(profile, updated));
+                if (!JsonNode.DeepEquals(profile, updated)) count++;
             }
             return count;
         }
         finally { _gate.Release(); }
     }
 
-    public async Task SaveProfileAsync(JsonObject expected, JsonObject updated, List<ProfileAppLink> links, CatalogState displayed)
+    public async Task SaveProfileAsync(JsonObject expected, JsonObject updated, List<ProfileAppLink> links, CatalogState displayed,
+        ProfileTimeZoneSetting? timezone = null)
     {
         await _gate.WaitAsync();
         try
         {
             var state = await ReadAsync();
+            if (!JsonNode.DeepEquals(JsonSerializer.SerializeToNode(state.ProfileTimeZones.GetValueOrDefault(expected.Text("id"))),
+                                    JsonSerializer.SerializeToNode(displayed.ProfileTimeZones.GetValueOrDefault(expected.Text("id")))))
+                throw new InvalidOperationException("This profile's timezone changed in another browser. Reload before saving.");
             foreach (var link in links)
             {
                 var entry = state.Apps.SingleOrDefault(a => a.Id == link.CatalogId);
@@ -271,12 +389,49 @@ public sealed class AppCatalog(DenStorage storage, IServiceScopeFactory scopes, 
                 if (entry is null || shown is null || !JsonNode.DeepEquals(entry.Definition, shown.Definition))
                     throw new InvalidOperationException("App defaults changed while this profile was open. Reload before saving.");
             }
-            await wolf.ReplaceProfileAsync(expected, updated);
+            var before = CopyState(state);
             state.Links.RemoveAll(l => l.ProfileId == expected.Text("id"));
             state.Links.AddRange(links);
-            await storage.WriteAsync(FileName, state);
+            SetTimeZone(state, expected.Text("id"), timezone);
+            await PersistProfileUpdateAsync(before, state, expected, updated,
+                () => wolf.ReplaceProfileAsync(expected, updated));
         }
         finally { _gate.Release(); }
+    }
+
+    public async Task AddProfileAsync(JsonObject profile, ProfileTimeZoneSetting? timezone = null)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            var state = await ReadAsync();
+            var before = CopyState(state);
+            SetTimeZone(state, profile.Text("id"), timezone);
+            await PersistProfileUpdateAsync(before, state, null, profile,
+                () => wolf.AddProfileAsync(profile));
+        }
+        finally { _gate.Release(); }
+    }
+
+    public async Task DeleteProfileAsync(JsonObject expected)
+    {
+        await _gate.WaitAsync();
+        try
+        {
+            var state = await ReadAsync();
+            var before = CopyState(state);
+            state.Links.RemoveAll(l => l.ProfileId == expected.Text("id"));
+            state.ProfileTimeZones.Remove(expected.Text("id"));
+            await PersistProfileUpdateAsync(before, state, expected, null,
+                () => wolf.DeleteProfileAsync(expected));
+        }
+        finally { _gate.Release(); }
+    }
+
+    private static void SetTimeZone(CatalogState state, string profileId, ProfileTimeZoneSetting? timezone)
+    {
+        if (timezone is null) state.ProfileTimeZones.Remove(profileId);
+        else state.ProfileTimeZones[profileId] = timezone;
     }
 
     public static void ValidateApp(JsonObject app)

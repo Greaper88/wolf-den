@@ -309,18 +309,24 @@ internal sealed class FakeWolf : HttpMessageHandler
     public int Writes { get; private set; }
     public bool LoseAddReply { get; set; }
     public string? FailAddForProfile { get; set; }
+    public Action? AfterSuccessfulWrite { get; set; }
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         if (request.Method == HttpMethod.Get)
             return Reply(new JsonObject { ["success"] = true, ["profiles"] = WolfJson.Array(Profiles) });
         Writes++;
         var body = (JsonObject)JsonNode.Parse(await request.Content!.ReadAsStringAsync(cancellationToken))!;
-        if (request.RequestUri!.AbsolutePath.EndsWith("/remove")) Profiles.RemoveAll(p => p.Text("id") == body.Text("id"));
+        if (request.RequestUri!.AbsolutePath.EndsWith("/remove"))
+        {
+            Profiles.RemoveAll(p => p.Text("id") == body.Text("id"));
+            AfterSuccessfulWrite?.Invoke();
+        }
         else
         {
             if (FailAddForProfile == body.Text("id")) { FailAddForProfile = null; return Reply(new JsonObject { ["error"] = "simulated profile failure" }, HttpStatusCode.InternalServerError); }
             if (FailAdds > 0) { FailAdds--; return Reply(new JsonObject { ["error"] = "simulated failure" }, HttpStatusCode.InternalServerError); }
             Profiles.Add(body);
+            AfterSuccessfulWrite?.Invoke();
             if (LoseAddReply) { LoseAddReply = false; throw new HttpRequestException("lost response"); }
         }
         return Reply(new JsonObject { ["success"] = true });

@@ -1,14 +1,14 @@
 @inject AppCatalog Catalog
-@inject WolfConfigurationClient Wolf
 
 <details class="card mb-3">
-    <summary class="card-header"><strong>@Profile.Text("name")</strong> <span class="text-muted ms-2">@Profile.Objects("apps").Count enabled apps</span></summary>
+    <summary class="card-header"><strong>@Profile.Text("name")</strong> <span class="text-muted ms-2">@Profile.Objects("apps").Count enabled apps</span><span class="text-muted ms-2">Time zone: @(CatalogState.ProfileTimeZones.GetValueOrDefault(Profile.Text("id"))?.TimeZone ?? "System default")</span></summary>
     <div class="card-body">
         @if (_error is not null) { <div class="alert alert-danger" role="alert">@_error</div> }
         <fieldset disabled="@_busy">
             <div class="row g-3 mb-3">
                 <div class="col-md-6"><label class="form-label">Profile name<input class="form-control" @bind="_editor.Name" @bind:event="oninput" /></label></div>
                 <div class="col-md-6"><label class="form-label">Icon URL or Wolf path<input class="form-control" @bind="_editor.Icon" @bind:event="oninput" /></label></div>
+                <div class="col-md-6"><ProfileTimeZonePicker @bind-Value="_editor.TimeZone" /></div>
             </div>
             <label class="me-3"><input type="checkbox" @bind="_editor.HasPin" /> Require PIN</label>
             @if (_editor.HasPin) { <label>PIN <input class="form-control d-inline-block w-auto" type="password" inputmode="numeric" autocomplete="new-password" @bind="_editor.Pin" @bind:event="oninput" /></label> }
@@ -45,7 +45,7 @@
     private Task Save() => Run(async () =>
     {
         var (profile, links) = _editor.Build();
-        await Catalog.SaveProfileAsync(_editor.Original, profile, links, CatalogState);
+        await Catalog.SaveProfileAsync(_editor.Original, profile, links, CatalogState, _editor.TimeZoneSetting);
     });
-    private Task Delete() => Run(() => Wolf.DeleteProfileAsync(_editor.Original));
+    private Task Delete() => Run(() => Catalog.DeleteProfileAsync(_editor.Original));
 }

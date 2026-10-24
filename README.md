@@ -234,6 +234,19 @@ mounts** resets mount overrides. Unchecking the icon override restores icon
 inheritance; checking it and leaving the URL blank explicitly selects the
 placeholder. Save the profile to make its settings available to Wolf-UI.
 
+Set a profile's **Time zone** to an IANA timezone such as `America/Chicago` when
+it differs from the host. Den applies `TZ=America/Chicago` to the existing Docker
+runner `env` array for every enabled container app, including apps enabled later.
+Other environment variables and system app defaults are preserved. This is the
+same field as `env = ["TZ=America/Chicago", ...]` in an app's TOML runner section;
+Wolf saves the change through its profile API. It takes effect when the app
+container is next launched. Process runners are unchanged.
+
+**System default** leaves app timezone settings alone until an override is set.
+Clearing a saved override restores each app's previous setting, including its
+inherited default `TZ` if one exists. The preference and restoration data live
+in Den's persistent catalog, so keep that storage along with Wolf's config.
+
 After editing a catalog default, **Apply defaults to enabled profiles** updates
 linked profile apps while preserving overrides. Mounts are matched by their
 container destination, including explicit removals. For example:
@@ -271,6 +284,12 @@ progress so it can be retried. There remains a brief remove/add window and an
 external writer could race after the comparison; an atomic Wolf endpoint would
 be needed to eliminate those limitations. Retained recovery files can be used
 for manual recovery if Wolf becomes unreachable during a save.
+
+Before changing a profile, Den also writes `pending-profile-update.json` to
+coordinate Wolf's profile with catalog links and timezone restoration data. If
+a save is interrupted, the next catalog read reconciles that journal against
+Wolf's current profile without changing Wolf. An unexpected external edit keeps
+the recovery data and reports a conflict instead of guessing which state to use.
 
 An unavailable Wolf API shows an error on Profiles while Apps remains available.
 Event-stream disconnects no longer shut down wolf-den. `WOLF_SOCKET_PATH` accepts

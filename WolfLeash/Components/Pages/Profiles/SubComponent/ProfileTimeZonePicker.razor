@@ -1,0 +1,16 @@
+<label class="form-label d-block">Time zone
+    <select class="form-select" value="@Value" @onchange="Change">
+        <option value="">System default</option>
+        @foreach (var id in ProfileTimeZones.AvailableIds)
+        {
+            <option value="@id">@id</option>
+        }
+    </select>
+</label>
+<div class="form-text">Applies to every enabled container app at its next launch, including apps enabled later. System default restores each app's previous timezone setting.</div>
+
+@code {
+    [Parameter] public string Value { get; set; } = "";
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    private Task Change(ChangeEventArgs args) => ValueChanged.InvokeAsync(args.Value?.ToString() ?? "");
+}
