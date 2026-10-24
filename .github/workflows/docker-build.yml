@@ -2,7 +2,7 @@ name: Docker build
 
 on:
   push:
-    branches: [main, dev-NUMA-aware]
+    branches: [NUMA-aware, dev-NUMA-aware]
     tags: ['v*']
   workflow_dispatch:
 
@@ -29,9 +29,10 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}
             type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/NUMA-aware' }}
             type=raw,value=numa-aware-dev,enable=${{ github.ref == 'refs/heads/dev-NUMA-aware' }}
             type=sha
-          flavor: latest=false # let's not produce a :latest tag
+          flavor: latest=false # latest is explicitly limited to NUMA-aware above
 
       - name: Set up Docker Buildx
         id: buildx

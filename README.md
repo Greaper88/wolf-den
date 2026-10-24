@@ -1,8 +1,17 @@
 # NUMA-aware Wolf Den
 
-This `dev-NUMA-aware` branch pairs with Wolf's `dev-NUMA-aware` branch and
-`ghcr.io/greaper88/wolf:numa-aware-dev`. Its Den image is
-`ghcr.io/greaper88/wolf-den:numa-aware-dev`.
+`NUMA-aware` is this fork's default release branch, matching Wolf's default
+branch. Ongoing development uses `dev-NUMA-aware` in both repositories.
+
+| Channel | Branch | Wolf image | Wolf Den image |
+| --- | --- | --- | --- |
+| Default release | `NUMA-aware` | `ghcr.io/greaper88/wolf:latest` | `ghcr.io/greaper88/wolf-den:latest` |
+| Development | `dev-NUMA-aware` | `ghcr.io/greaper88/wolf:numa-aware-dev` | `ghcr.io/greaper88/wolf-den:numa-aware-dev` |
+
+Commits to either maintained branch publish its image and a commit tag through
+GitHub Actions. The release also has a `wolf-den:numa-aware` branch tag. `main`
+retains the previous release history, and `stable` retains the upstream baseline.
+Start new fork work from `NUMA-aware` or `dev-NUMA-aware`.
 
 Home groups each detected physical CPU socket directly above its assigned GPU
 cards. Each group wraps as a unit on smaller screens; the GPUs wrap within their
@@ -54,16 +63,14 @@ with no helper containers or background sampler in the running stack.
 These fields require the matching Wolf NUMA dashboard API extension. Existing
 version 1 status responses remain usable, with CPU information unavailable.
 The app catalog, profiles, GPU metrics, and viewer-driven refresh behavior are
-unchanged. Use the NUMA Den image in place of `:main` in the examples below.
+unchanged. The examples below use the default release images.
 
 # Wolf Den
 
 A web UI for managing Wolf
 
-This fork's custom app catalog and profile management live on the default `main`
-branch. `stable` retains the upstream baseline. The published fork image is
-`ghcr.io/greaper88/wolf-den:main`; commits to `main` build that tag and a commit tag
-through GitHub Actions.
+This fork includes the persistent app catalog, profile overrides, and NUMA-aware
+system dashboard described above.
 
 ## Quickstart
 
@@ -89,7 +96,7 @@ docker run --name wolf-den \
   -e WOLF_SOCKET_PATH=/var/run/wolf/wolf.sock \
   -v /var/run/wolf:/var/run/wolf \
   -v /etc/wolf/wolf-den:/app/wolf-den/ \
-  ghcr.io/greaper88/wolf-den:main
+  ghcr.io/greaper88/wolf-den:latest
 ```
 
 ### Example compose
@@ -101,7 +108,7 @@ platform; here's an example using the Intel/AMD platform
 version: "3"
 services:
   wolf:
-    image: ghcr.io/games-on-whales/wolf:stable
+    image: ghcr.io/greaper88/wolf:latest
     environment:
       # Add this line
       - WOLF_SOCKET_PATH=/var/run/wolf/wolf.sock
@@ -122,7 +129,7 @@ services:
     restart: unless-stopped
 
   wolf-den:
-    image: ghcr.io/greaper88/wolf-den:main
+    image: ghcr.io/greaper88/wolf-den:latest
     ports:
       - 8080:8080
     environment:
